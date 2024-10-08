@@ -87,6 +87,47 @@ class Evaluator:
                 filtered_df = filtered_df.last() - filtered_df.first()
             kpi = filtered_df[measuring_device]
 
+        elif isinstance(property_, Co2):
+            IDEAL_CO2_LEVEL = 750
+
+            ideal_co2_level=IDEAL_CO2_LEVEL
+
+            #print(type((df_simulation_readings.values.tolist())[0][0]))
+
+            # Initialize a DataFrame to hold the discomfort calculations
+            filtered_df = pd.DataFrame()
+            filtered_df.insert(0, "time", df_simulation_readings.index)
+            filtered_df.insert(1, "co2_readings", df_simulation_readings[measuring_device].values)
+            filtered_df.set_index("time", inplace=True)
+
+            # Initialize a column for occupancy status
+            filtered_df['is_occupied'] = False
+
+            # Determine occupancy for each time index
+            for time in filtered_df.index:
+                occupancy_value = occupancy_schedule.get_schedule_value(time)
+                print(occupancy_value)
+                filtered_df.at[time, 'is_occupied'] = occupancy_value > 0  # Assuming any positive value indicates occupancy
+
+            # Calculate dt only for occupied times
+            dt = filtered_df['is_occupied'] * filtered_df.index.to_series().diff().dt.total_seconds() / 3600
+
+            # Calculate discomfort only where the room is occupied
+            filtered_df["discomfort"] = (filtered_df["co2_readings"] - ideal_co2_level) * dt
+            filtered_df["discomfort"] = filtered_df.discomfort.mask(filtered_df["discomfort"] < 0, 0)
+
+            filtered_df["discomfort"].clip(lower=0, inplace=True)
+
+            filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
+            if evaluation_metric=="T":
+                filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+            else:
+                filtered_df = filtered_df.set_index('time').resample(f'1{evaluation_metric}')
+                filtered_df = filtered_df.resample(f'1{evaluation_metric}')
+                filtered_df = filtered_df.last() - filtered_df.first()
+
+            kpi = filtered_df["discomfort"]
+
         return kpi
 
     def evaluate(self, 

@@ -31,8 +31,10 @@ class Evaluator:
     """
     def __init__(self):
         self.simulator = Simulator()
+    
+    kpi = None
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_):
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_, model):
         
         '''
             The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
@@ -41,6 +43,11 @@ class Evaluator:
             difference between the temperature readings and the setpoint value over time. If the property is an Energy, 
             it calculates the energy consumption over time. The KPI is then returned.
         '''
+
+        if property_ == None:
+                property_ = model.component_dict[measuring_device].observes
+
+        #print(f"Property Type: {type(property_)}")
 
         if isinstance(property_, Temperature):
             assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
@@ -80,15 +87,16 @@ class Evaluator:
 
         elif isinstance(property_, Energy):
             if evaluation_metric=="T":
-                print(df_simulation_readings)
                 filtered_df = df_simulation_readings.tail(n=1).set_index(pd.Index(["Total"]))
             else:
                 filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
                 filtered_df = filtered_df.last() - filtered_df.first()
+                #filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}').apply(lambda x: x.last() - x.first())
             kpi = filtered_df[measuring_device]
 
+        #elif test == 1:
         elif isinstance(property_, Co2):
-            IDEAL_CO2_LEVEL = 750
+            IDEAL_CO2_LEVEL = 900
 
             ideal_co2_level=IDEAL_CO2_LEVEL
 
@@ -104,9 +112,11 @@ class Evaluator:
             filtered_df['is_occupied'] = False
 
             # Determine occupancy for each time index
+
+            # The name 'Occupancy schedule" is fixed in the moment, find work around + talk to jakob about using model as input (so you dont have to set up a simulator)
+            occupancy_schedule = model.component_dict["Occupancy schedule"]
             for time in filtered_df.index:
                 occupancy_value = occupancy_schedule.get_schedule_value(time)
-                print(occupancy_value)
                 filtered_df.at[time, 'is_occupied'] = occupancy_value > 0  # Assuming any positive value indicates occupancy
 
             # Calculate dt only for occupied times
@@ -116,18 +126,17 @@ class Evaluator:
             filtered_df["discomfort"] = (filtered_df["co2_readings"] - ideal_co2_level) * dt
             filtered_df["discomfort"] = filtered_df.discomfort.mask(filtered_df["discomfort"] < 0, 0)
 
-            filtered_df["discomfort"].clip(lower=0, inplace=True)
+            #filtered_df["discomfort"].clip(lower=0, inplace=True)
 
-            filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
-            if evaluation_metric=="T":
+            if evaluation_metric == "T":
+                filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
                 filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+                #print(filtered_df)
             else:
-                filtered_df = filtered_df.set_index('time').resample(f'1{evaluation_metric}')
                 filtered_df = filtered_df.resample(f'1{evaluation_metric}')
-                filtered_df = filtered_df.last() - filtered_df.first()
-
+                #filtered_df['discomfort'] = filtered_df['discomfort'].diff().fillna(0)
+                #filtered_df = filtered_df.last() - filtered_df.first()
             kpi = filtered_df["discomfort"]
-
         return kpi
 
     def evaluate(self, 
@@ -212,7 +221,7 @@ class Evaluator:
                 df_simulation_readings = self.simulator.get_simulation_readings()
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
                     property_ = model.component_dict[measuring_device].observes
-                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_)
+                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_, model)
                     kpi_dict[measuring_device].insert(0, model.id, kpi)
                     if "time" not in kpi_dict[measuring_device]:
                         kpi_dict[measuring_device].insert(0, "time", kpi.index)

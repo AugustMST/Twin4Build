@@ -36,7 +36,7 @@ class Evaluator:
     
     kpi = None
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_, model):
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, model):
         
         '''
             The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
@@ -46,6 +46,7 @@ class Evaluator:
             - df_simulation_readings: DataFrame containing the kpi indexed by time.
             - measuring_device: The name of the measuring device column in the DataFrame (the measuring device measuring property_).
             - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage (eg: 'T', 'H', 'D')
+            - model: Contains occupancy schedule.
 
             Returns:
             - DataFrame for the specified evaluation metric and kpi for the property_.
@@ -157,18 +158,6 @@ class Evaluator:
             kpi = filtered_df["discomfort"]
 
         elif isinstance(property_, Power):
-            """
-            Calculate the power usage based on power readings.
-
-            Parameters:
-            - df_simulation_readings: DataFrame containing the power readings indexed by time.
-            - measuring_device: The name of the measuring device column in the DataFrame.
-            - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage ('T', 'H', 'D')
-
-            Returns:
-            - Power usage DataFrame for the specified evaluation metric.
-            """
-
             filtered_df = pd.DataFrame()
             filtered_df.insert(0, "time", df_simulation_readings.index)
             filtered_df.insert(1, "power_readings", df_simulation_readings[measuring_device].values)
@@ -268,7 +257,7 @@ class Evaluator:
                 df_simulation_readings = self.simulator.get_simulation_readings()
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
                     property_ = model.component_dict[measuring_device].observes
-                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_, model)
+                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model)
                     kpi_dict[measuring_device].insert(0, model.id, kpi)
                     if "time" not in kpi_dict[measuring_device]:
                         kpi_dict[measuring_device].insert(0, "time", kpi.index)
@@ -465,8 +454,24 @@ class Evaluator:
                     fig.suptitle(measuring_device, fontsize=18)
                     self.simulation_readings_dict[measuring_device].plot(ax=ax, rot=0).legend(fontsize=8)
 
+        elif method=="optimize":
+                    for model in models:
+                        self.simulator.simulate(model,
+                                            stepSize=stepSize,
+                                            startTime=startTime,
+                                            endTime=endTime)
+                        df_simulation_readings = self.simulator.get_simulation_readings()
+
+                        for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
+                            property_ = model.component_dict[measuring_device].observes
+                            kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model)
+                            kpi_dict[measuring_device].insert(0, model.id, kpi)
+                            if "time" not in kpi_dict[measuring_device]:
+                                kpi_dict[measuring_device].insert(0, "time", kpi.index)
+                    
         if show:
-            plt.show()    
+            plt.show()
 
-
+        if method == 'optimize':
+            return kpi_dict    
 

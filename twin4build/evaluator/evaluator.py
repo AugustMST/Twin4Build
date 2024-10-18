@@ -41,9 +41,28 @@ class Evaluator:
         '''
             The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
             a measuring device, an evaluation metric, and a property to be evaluated. 
-            If the property is a Temperature, it calculates the discomfort of occupants based on the
-            difference between the temperature readings and the setpoint value over time. If the property is an Energy, 
-            it calculates the energy consumption over time. The KPI is then returned.
+
+            Parameters:
+            - df_simulation_readings: DataFrame containing the kpi indexed by time.
+            - measuring_device: The name of the measuring device column in the DataFrame (the measuring device measuring property_).
+            - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage (eg: 'T', 'H', 'D')
+
+            Returns:
+            - DataFrame for the specified evaluation metric and kpi for the property_.
+
+            If property_ == Temperature:
+                It calculates the discomfort of occupants based on the
+                difference between the temperature readings and the setpoint value over time.
+
+            If property_ == CO2:
+                It calculates the discomfort of occupants based on the
+                difference between the temperature readings and the a fixed co2 value of 1000 ppm, but only if there is occupancy in the specific space.
+
+            If property_ == Energy:
+                It returns the energy consumption over time.
+
+            If property_ == Power:
+                It returns the power usage based on power readings.
         '''
 
         if property_ == None:
@@ -102,8 +121,6 @@ class Evaluator:
 
             ideal_co2_level=IDEAL_CO2_LEVEL
 
-            #print(type((df_simulation_readings.values.tolist())[0][0]))
-
             # Initialize a DataFrame to hold the discomfort calculations
             filtered_df = pd.DataFrame()
             filtered_df.insert(0, "time", df_simulation_readings.index)
@@ -114,7 +131,6 @@ class Evaluator:
             filtered_df['is_occupied'] = False
 
             # Determine occupancy for each time index
-
             # The name 'Occupancy schedule" is fixed in the moment, find work around + talk to jakob about using model as input (so you dont have to set up a simulator)
             occupancy_schedule = model.component_dict["Occupancy schedule"]
             for time in filtered_df.index:
@@ -147,7 +163,7 @@ class Evaluator:
             Parameters:
             - df_simulation_readings: DataFrame containing the power readings indexed by time.
             - measuring_device: The name of the measuring device column in the DataFrame.
-            - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage ('T', 'H', 'D', etc.).
+            - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage ('T', 'H', 'D')
 
             Returns:
             - Power usage DataFrame for the specified evaluation metric.

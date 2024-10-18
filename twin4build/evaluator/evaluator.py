@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+from twin4build.saref.property_ import power
 from twin4build.simulator.simulator import Simulator
 from twin4build.saref.device.sensor.sensor import Sensor
 from twin4build.saref.device.meter.meter import Meter
@@ -10,6 +11,7 @@ from twin4build.utils.plot.plot import get_fig_axes, load_params
 from twin4build.utils.plot.plot import bar_plot_line_format
 from twin4build.saref.property_.temperature.temperature import Temperature
 from twin4build.saref.property_.Co2.Co2 import Co2
+from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.opening_position.opening_position import OpeningPosition #This is in use
 from twin4build.saref.property_.energy.energy import Energy #This is in use
 from twin4build.model.model import Model
@@ -137,6 +139,35 @@ class Evaluator:
                 #filtered_df['discomfort'] = filtered_df['discomfort'].diff().fillna(0)
                 #filtered_df = filtered_df.last() - filtered_df.first()
             kpi = filtered_df["discomfort"]
+
+        elif isinstance(property_, Power):
+            """
+            Calculate the power usage based on power readings.
+
+            Parameters:
+            - df_simulation_readings: DataFrame containing the power readings indexed by time.
+            - measuring_device: The name of the measuring device column in the DataFrame.
+            - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage ('T', 'H', 'D', etc.).
+
+            Returns:
+            - Power usage DataFrame for the specified evaluation metric.
+            """
+
+            filtered_df = pd.DataFrame()
+            filtered_df.insert(0, "time", df_simulation_readings.index)
+            filtered_df.insert(1, "power_readings", df_simulation_readings[measuring_device].values)
+            filtered_df.set_index("time", inplace=True)
+
+            
+            filtered_df["power_readings"] = filtered_df["power_readings"].fillna(0)
+            
+            if evaluation_metric == "T":
+                filtered_df["power_readings"] = filtered_df["power_readings"].cumsum()
+                filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+            else:
+                filtered_df = filtered_df.resample(f'1{evaluation_metric}')
+            kpi=filtered_df["power_readings"]
+                
         return kpi
 
     def evaluate(self, 

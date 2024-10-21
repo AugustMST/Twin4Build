@@ -1,8 +1,8 @@
+from __future__ import annotations
 import multiprocessing
 import math
 import os
 from tqdm import tqdm
-from twin4build.simulator.simulator import Simulator
 from twin4build.utils.rgetattr import rgetattr
 from twin4build.utils.uppath import uppath
 import numpy as np
@@ -16,18 +16,103 @@ from scipy.optimize import least_squares, OptimizeResult
 import george
 from george import kernels
 from george.metrics import Metric
-import matplotlib.pyplot as plt
-from typing import Union, List, Dict, Optional
+import twin4build.simulator.simulator as simulator
+import pygad
+from typing import Union, List, Dict, Optional, Callable, TYPE_CHECKING
+if TYPE_CHECKING:
+    import twin4build.model.model as model
+
+
+class MCMCEstimationResult(dict):
+    def __init__(self,
+                 integratedAutoCorrelatedTime: List=None,
+                 chain_swap_acceptance: np.array=None,
+                 chain_jump_acceptance: np.array=None,
+                 chain_logl: np.array=None,
+                 chain_logP: np.array=None,
+                 chain_x: np.array=None,
+                 chain_betas: np.array=None,
+                 chain_T: np.array=None,
+                 component_id: List[str]=None,
+                 component_attr: List[str]=None,
+                 theta_mask: np.array=None,
+                 standardDeviation: np.array=None,
+                 startTime_train: List[datetime.datetime]=None,
+                 endTime_train: List[datetime.datetime]=None,
+                 stepSize_train: List[int]=None,
+                 gp_input_map: np.array=None,
+                 n_par: int=None,
+                 n_par_map: dict=None):
+        super().__init__(integratedAutoCorrelatedTime=integratedAutoCorrelatedTime,
+                         chain_swap_acceptance=chain_swap_acceptance,
+                         chain_jump_acceptance=chain_jump_acceptance,
+                         chain_logl=chain_logl,
+                         chain_logP=chain_logP,
+                         chain_x=chain_x,
+                         chain_betas=chain_betas,
+                         chain_T=chain_T,
+                         component_id=component_id,
+                         component_attr=component_attr,
+                         theta_mask=theta_mask,
+                         standardDeviation=standardDeviation,
+                         startTime_train=startTime_train,
+                         endTime_train=endTime_train,
+                         stepSize_train=stepSize_train,
+                         gp_input_map=gp_input_map,
+                         n_par=n_par,
+                         n_par_map=n_par_map)
+        # self["integratedAutoCorrelatedTime"] = integratedAutoCorrelatedTime
+        # self["chain_swap_acceptance"] = chain_swap_acceptance
+        # self["chain_jump_acceptance"] = chain_jump_acceptance
+        # self["chain_logl"] = chain_logl
+        # self["chain_logP"] = chain_logP
+        # self["chain_x"] = chain_x
+        # self["chain_betas"] = chain_betas
+        # self["chain_T"] = chain_T
+        # self["component_id"] = component_id 
+        # self["component_attr"] = component_attr
+        # self["theta_mask"] = theta_mask
+        # self["standardDeviation"] = standardDeviation
+        # self["startTime_train"] = startTime_train
+        # self["endTime_train"] = endTime_train
+        # self["stepSize_train"] = stepSize_train
+        # self["gp_input_map"] = gp_input_map
+        # self["n_par"] = n_par
+        # self["n_par_map"] = n_par_map
+
+
+class LSEstimationResult(dict):
+    def __init__(self,
+                 result_x: np.array=None,
+                 component_id: List[str]=None,
+                 component_attr: List[str]=None,
+                 theta_mask: np.array=None,
+                 startTime_train: List[datetime.datetime]=None,
+                 endTime_train: List[datetime.datetime]=None,
+                 stepSize_train: List[int]=None):
+        super().__init__(result_x=result_x,
+                         component_id=component_id,
+                         component_attr=component_attr,
+                         theta_mask=theta_mask,
+                         startTime_train=startTime_train,
+                         endTime_train=endTime_train,
+                         stepSize_train=stepSize_train)
+        # self["result_x"] = result_x
+        # self["component_id"] = component_id 
+        # self["component_attr"] = component_attr
+        # self["theta_mask"] = theta_mask
+        # self["startTime_train"] = startTime_train
+        # self["endTime_train"] = endTime_train
+        # self["stepSize_train"] = stepSize_train
 
 class Estimator():
     def __init__(self,
-                model=None):
+                model: Optional[model.Model] = None):
         self.model = model
-        self.simulator = Simulator(model)
+        self.simulator = simulator.Simulator(model)
         self.tol = 1e-10
     
     def estimate(self,
-                 y_scale: np.ndarray = None,
                  trackGradients: bool = False,
                  targetParameters: Dict[str, Dict] = None,
                  targetMeasuringDevices: Dict[str, Dict] = None,
@@ -45,7 +130,6 @@ class Estimator():
         method (MCMC or least squares) based on the 'method' argument.
 
         Args:
-            y_scale (np.ndarray, optional): Scale factors for the output variables. Defaults to None.
             trackGradients (bool): Whether to track gradients during simulation. Defaults to False.
             targetParameters (Dict[str, Dict]): Dictionary of parameters to be estimated.
             targetMeasuringDevices (Dict[str, Dict]): Dictionary of measuring devices and their properties.
@@ -107,7 +191,7 @@ class Estimator():
                     targetParameters["shared"][attr][key] = [list_]
         
 
-        allowed_methods = ["MCMC","LS"]
+        allowed_methods = ["MCMC","LS","GA"]
         assert method in allowed_methods, f"The \"method\" argument must be one of the following: {', '.join(allowed_methods)} - \"{method}\" was provided."
         
         self.verbose = verbose 
@@ -160,6 +244,15 @@ class Estimator():
         for i, (startTime_, endTime_, stepSize_)  in enumerate(zip(self.startTime_train, self.endTime_train, self.stepSize_train)):
             self.simulator.get_simulation_timesteps(startTime_, endTime_, stepSize_)
             self.n_timesteps += len(self.simulator.secondTimeSteps)-self.n_initialization_steps
+            actual_readings = self.simulator.get_actual_readings(startTime=startTime_, endTime=endTime_, stepSize=stepSize_)
+            if i==0:
+                self.actual_readings = {}
+                for measuring_device in self.targetMeasuringDevices:
+                    self.actual_readings[measuring_device.id] = actual_readings[measuring_device.id].to_numpy()[self.n_initialization_steps:]
+            else:
+                for measuring_device in self.targetMeasuringDevices:
+                    self.actual_readings[measuring_device.id] = np.concatenate((self.actual_readings[measuring_device.id], actual_readings[measuring_device.id].to_numpy()[self.n_initialization_steps:]), axis=0)
+
         x0 = []
         for par_dict in targetParameters["private"].values():
             if len(par_dict["components"])==len(par_dict["x0"]):
@@ -194,17 +287,19 @@ class Estimator():
         self.x0 = np.array(x0)
         self.lb = np.array(lb)
         self.ub = np.array(ub)
-        if y_scale is None:
-            self.y_scale = np.array([1]*len(targetMeasuringDevices))
-        else:
-            self.y_scale = np.array(y_scale)
+        self.ndim = int(self.theta_mask[-1]+1)
 
         if method == "MCMC":
             if options is None:
                 options = {}
             self.mcmc(**options)
         elif method == "LS":
-            self.ls(self.x0, self.lb, self.ub)
+            options = {}
+            self.ls(**options)
+        elif method == "GA":
+            # if options is None:
+            options = {}
+            self.ga(**options)
 
     def sample_cartesian_n_sphere(self, r: float, n_dim: int, n_samples: int) -> np.ndarray:
         """
@@ -336,10 +431,10 @@ class Estimator():
                             stepSize=stepSize_)
         
         datestr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename_pickle = str('{}{}'.format(datestr, '.pickle'))
-        filename_npz = str('{}{}'.format(datestr, '.npz'))
-        self.chain_savedir_pickle, isfile = self.model.get_dir(folder_list=["model_parameters", "estimation_results", "chain_logs"], filename=filename_pickle)
-        self.chain_savedir_npz, isfile = self.model.get_dir(folder_list=["model_parameters", "estimation_results", "chain_logs"], filename=filename_npz)
+        filename_pickle = str('{}{}'.format(datestr, '_mcmc.pickle'))
+        filename_npz = str('{}{}'.format(datestr, '_mcmc.npz'))
+        self.result_savedir_pickle, isfile = self.model.get_dir(folder_list=["model_parameters", "estimation_results", "chain_logs"], filename=filename_pickle)
+        self.result_savedir_npz, isfile = self.model.get_dir(folder_list=["model_parameters", "estimation_results", "chain_logs"], filename=filename_npz)
         
         self.gp_input_type = gp_input_type
         self.gp_add_time = gp_add_time
@@ -363,7 +458,7 @@ class Estimator():
 
 
         self.gp_input_map = None
-        ndim = int(self.theta_mask[-1]+1)
+        ndim = self.ndim
         add_par = 1 # We add the following parameters: "a"
         self.n_par = 0
         self.n_par_map = {}
@@ -416,18 +511,18 @@ class Estimator():
                 else:
                     gp_input, self.gp_input_map = self.simulator.get_gp_input(self.targetMeasuringDevices, startTime_, endTime_, stepSize_, gp_input_type, self.gp_add_time, self.gp_max_inputs, False, None, None)
                 
-                actual_readings = self.simulator.get_actual_readings(startTime=startTime_, endTime=endTime_, stepSize=stepSize_)
+                # actual_readings = self.simulator.get_actual_readings(startTime=startTime_, endTime=endTime_, stepSize=stepSize_)
                 if i==0:
                     self.gp_input = gp_input
-                    self.actual_readings = {}
+                    # self.actual_readings = {}
                     for measuring_device in self.targetMeasuringDevices:
                         self.gp_input[measuring_device.id] = self.gp_input[measuring_device.id][self.n_initialization_steps:,:]
-                        self.actual_readings[measuring_device.id] = actual_readings[measuring_device.id].to_numpy()[self.n_initialization_steps:]
+                        # self.actual_readings[measuring_device.id] = actual_readings[measuring_device.id].to_numpy()[self.n_initialization_steps:]
                 else:
                     for measuring_device in self.targetMeasuringDevices:
                         x = gp_input[measuring_device.id][self.n_initialization_steps:,:]
                         self.gp_input[measuring_device.id] = np.concatenate((self.gp_input[measuring_device.id], x), axis=0)
-                        self.actual_readings[measuring_device.id] = np.concatenate((self.actual_readings[measuring_device.id], actual_readings[measuring_device.id].to_numpy()[self.n_initialization_steps:]), axis=0)
+                        # self.actual_readings[measuring_device.id] = np.concatenate((self.actual_readings[measuring_device.id], actual_readings[measuring_device.id].to_numpy()[self.n_initialization_steps:]), axis=0)
 
             self.gp_lengthscale = self.simulator.get_gp_lengthscale(self.targetMeasuringDevices, self.gp_input)
             for j, measuring_device in enumerate(self.targetMeasuringDevices):
@@ -464,21 +559,14 @@ class Estimator():
                 self.x0 = np.append(self.x0, add_x0)
                 self.lb = np.append(self.lb, add_lb)
                 self.ub = np.append(self.ub, add_ub)
-
-
-            
-            
-
             loglike = self._loglike_gaussian_process_wrapper
             ndim = ndim+self.n_par
-            
             self.standardDeviation_x0 = np.append(self.standardDeviation_x0, (upper_bound-lower_bound)/2*np.ones((self.n_par,))) ###################################################
         else:
-            loglike = self._loglike_wrapper
+            loglike = self._loglike_mcmc_wrapper
 
 
-        n_walkers = int(ndim*fac_walker) #*4 #Round up to nearest even number and multiply by 2
-        
+        n_walkers = int(ndim*fac_walker) #*4 #Round up to nearest even number and multiply_const by 2
         if add_gp and model_walker_initialization=="hypercube" and noise_walker_initialization=="uniform":
             r = 1e-5
             low = np.zeros((ndim-self.n_par,))
@@ -786,24 +874,18 @@ class Estimator():
 
         chain = sampler.chain(x0_start)
         n_save_checkpoint = 50 if n_save_checkpoint is None else n_save_checkpoint
-        result = {"integratedAutoCorrelatedTime": [],
-                    "chain.swap_acceptance": None,
-                    "chain.jump_acceptance": None,
-                    "chain.logl": None,
-                    "chain.logP": None,
-                    "chain.x": None,
-                    "chain.betas": None,
-                    "component_id": [com.id for com in self.flat_component_list],
-                    "component_attr": [attr for attr in self.flat_attr_list],
-                    "theta_mask": self.theta_mask,
-                    "standardDeviation": self.standardDeviation,
-                    "startTime_train": self.startTime_train,
-                    "endTime_train": self.endTime_train,
-                    "stepSize_train": self.stepSize_train,
-                    "gp_input_map": self.gp_input_map,
-                    "n_par": self.n_par,
-                    "n_par_map": self.n_par_map
-                    }
+        result = MCMCEstimationResult(integratedAutoCorrelatedTime=[],
+                                      component_id=[c.id for c in self.flat_component_list],
+                                      component_attr=self.flat_attr_list,
+                                      theta_mask=self.theta_mask,
+                                      standardDeviation=self.standardDeviation_x0,
+                                      startTime_train=self.startTime_train,
+                                      endTime_train=self.endTime_train,
+                                      stepSize_train=self.stepSize_train,
+                                      gp_input_map=self.gp_input_map,
+                                      n_par=self.n_par,
+                                      n_par_map=self.n_par_map,
+                                      )
         swap_acceptance = np.zeros((n_sample, n_temperature))
         jump_acceptance = np.zeros((n_sample, n_temperature))
         pbar = tqdm(enumerate(chain.iterate(n_sample)), total=n_sample)
@@ -822,14 +904,15 @@ class Estimator():
                 result["chain.logP"] = chain.logP[:i+1]
                 result["chain.x"] = chain.x[:i+1]
                 result["chain.betas"] = chain.betas[:i+1]
+                result["chain.T"] = 1/chain.betas[:i+1]
                 result["chain.swap_acceptance"] = swap_acceptance[:i+1]
                 result["chain.jump_acceptance"] = jump_acceptance[:i+1]
                 if use_pickle:
-                    with open(self.chain_savedir_pickle, 'wb') as handle:
+                    with open(self.result_savedir_pickle, 'wb') as handle:
                         pickle.dump(result, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 
                 if use_npz:
-                    np.savez_compressed(self.chain_savedir_npz, **result)
+                    np.savez_compressed(self.result_savedir_npz, **result)
         if n_cores>1:
             pool.close()
 
@@ -851,7 +934,7 @@ class Estimator():
                 sol_dict[component.id].append(rgetattr(component, attr))
         return sol_dict
 
-    def _loglike_wrapper(self, theta: np.ndarray) -> float:
+    def _loglike_mcmc_wrapper(self, theta: np.ndarray) -> float:
         """
         Wrapper for the log-likelihood function to handle boundary conditions and exceptions.
 
@@ -895,7 +978,7 @@ class Estimator():
                                     show_progress_bar=False)
             n_time = len(self.simulator.dateTimeSteps)-self.n_initialization_steps
             for measuring_device in self.targetMeasuringDevices:
-                y_model = np.array(next(iter(measuring_device.savedInput.values())))[self.n_initialization_steps:]#/self.targetMeasuringDevices[measuring_device]["scale_factor"]
+                y_model = np.array(next(iter(measuring_device.savedInput.values())))[self.n_initialization_steps:]
                 self.simulation_readings[measuring_device.id][n_time_prev:n_time_prev+n_time] = y_model
             n_time_prev += n_time
         loglike = 0
@@ -903,10 +986,9 @@ class Estimator():
         for measuring_device in self.targetMeasuringDevices:
             simulation_readings = self.simulation_readings[measuring_device.id]
             actual_readings = self.actual_readings[measuring_device.id]
-            res = (actual_readings-simulation_readings)/self.targetMeasuringDevices[measuring_device]["scale_factor"]
-            ss = np.sum(res**2, axis=0)
-            sd = self.targetMeasuringDevices[measuring_device]["standardDeviation"]/self.targetMeasuringDevices[measuring_device]["scale_factor"]
-            loglike_ = -0.5*np.sum(ss/(sd**2))
+            res = (actual_readings-simulation_readings)
+            sd = self.targetMeasuringDevices[measuring_device]["standardDeviation"]
+            loglike_ = -1*np.sum(((0.5)**0.5*res/sd)**2)
             loglike += loglike_
             self.loglike_dict[measuring_device.id] = loglike_
         return loglike
@@ -966,7 +1048,7 @@ class Estimator():
                                     show_progress_bar=False)
             n_time = len(self.simulator.dateTimeSteps)-self.n_initialization_steps
             for measuring_device in self.targetMeasuringDevices:
-                y_model = np.array(next(iter(measuring_device.savedInput.values())))[self.n_initialization_steps:]#/self.targetMeasuringDevices[measuring_device]["scale_factor"]
+                y_model = np.array(next(iter(measuring_device.savedInput.values())))[self.n_initialization_steps:]
                 self.simulation_readings[measuring_device.id][n_time_prev:n_time_prev+n_time] = y_model
             n_time_prev += n_time
 
@@ -988,7 +1070,7 @@ class Estimator():
             x = self.gp_input[measuring_device.id]
             simulation_readings = self.simulation_readings[measuring_device.id]
             actual_readings = self.actual_readings[measuring_device.id]
-            res = (actual_readings-simulation_readings)/self.targetMeasuringDevices[measuring_device]["scale_factor"]
+            res = (actual_readings-simulation_readings)
             n = self.n_par_map[measuring_device.id]
             scale_lengths = theta_kernel[n_prev:n_prev+n]
             a = scale_lengths[0]
@@ -996,7 +1078,7 @@ class Estimator():
             s = int(scale_lengths.size)
             scale_lengths_base = scale_lengths[:s]
             axes = list(range(s))
-            std = self.targetMeasuringDevices[measuring_device]["standardDeviation"]/self.targetMeasuringDevices[measuring_device]["scale_factor"]
+            std = self.targetMeasuringDevices[measuring_device]["standardDeviation"]
             kernel1 = kernels.Matern32Kernel(metric=scale_lengths_base, ndim=s, axes=axes)
             kernel = kernel1# + kernel2*kernel3
             gp = george.GP(a*kernel, solver=george.HODLRSolver, tol=1e-8, min_size=500)#, white_noise=np.log(var))#(tol=0.01))
@@ -1062,14 +1144,9 @@ class Estimator():
 
         return p_model+p_noise
 
-    def ls(self, x0: np.ndarray, lb: np.ndarray, ub: np.ndarray) -> OptimizeResult:
+    def ls(self, **options) -> OptimizeResult:
         """
         Run least squares estimation.
-
-        Args:
-            x0 (np.ndarray): Initial guess for the parameters.
-            lb (np.ndarray): Lower bounds for the parameters.
-            ub (np.ndarray): Upper bounds for the parameters.
 
         Returns:
             OptimizeResult: The optimization result returned by scipy.optimize.least_squares.
@@ -1079,10 +1156,17 @@ class Estimator():
         assert np.all(np.abs(self.x0-self.lb)>self.tol), f"The difference between x0 and lb must be larger than {str(self.tol)}"
         assert np.all(np.abs(self.x0-self.ub)>self.tol), f"The difference between x0 and ub must be larger than {str(self.tol)}"
         datestr = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = str('{}{}'.format(datestr, '.pickle'))
-        self.ls_res_savedir, isfile = self.model.get_dir(folder_list=["model_parameters", "estimation_results", "LS_result"], filename=filename)
-        ls_result = least_squares(self._res_fun_LS_exception_wrapper, x0, bounds=(lb, ub), verbose=2) #Change verbose to 2 to see the optimization progress
-        with open(self.ls_res_savedir, 'wb') as handle:
+        filename = str('{}{}'.format(datestr, '_ls.pickle'))
+        self.result_savedir_pickle, isfile = self.model.get_dir(folder_list=["model_parameters", "estimation_results", "LS_result"], filename=filename)
+        ls_result = least_squares(self._res_fun_ls_exception_wrapper, self.x0, bounds=(self.lb, self.ub), verbose=2, xtol=1e-12) #Change verbose to 2 to see the optimization progress
+        ls_result = LSEstimationResult(result_x=ls_result.x,
+                                      component_id=[com.id for com in self.flat_component_list],
+                                      component_attr=[attr for attr in self.flat_attr_list],
+                                      theta_mask=self.theta_mask,
+                                      startTime_train=self.startTime_train,
+                                      endTime_train=self.endTime_train,
+                                      stepSize_train=self.stepSize_train)
+        with open(self.result_savedir_pickle, 'wb') as handle:
             pickle.dump(ls_result, handle, protocol=pickle.HIGHEST_PROTOCOL)
         return ls_result
     
@@ -1096,6 +1180,7 @@ class Estimator():
         Returns:
             np.ndarray: Array of residuals.
         """
+        theta = theta[self.theta_mask]
         self.model.set_parameters_from_array(theta, self.flat_component_list, self.flat_attr_list)
         n_time_prev = 0
         self.simulation_readings = {com.id: np.zeros((self.n_timesteps)) for com in self.targetMeasuringDevices}
@@ -1110,14 +1195,16 @@ class Estimator():
                                     show_progress_bar=False)
             n_time = len(self.simulator.dateTimeSteps)-self.n_initialization_steps
             for measuring_device in self.targetMeasuringDevices:
-                y_model = np.array(next(iter(measuring_device.savedInput.values())))[self.n_initialization_steps:]#/self.targetMeasuringDevices[measuring_device]["scale_factor"]
+                y_model = np.array(next(iter(measuring_device.savedInput.values())))[self.n_initialization_steps:]
                 self.simulation_readings[measuring_device.id][n_time_prev:n_time_prev+n_time] = y_model
             n_time_prev += n_time
         res = np.zeros((self.n_timesteps, len(self.targetMeasuringDevices)))
         for j, measuring_device in enumerate(self.targetMeasuringDevices):
             simulation_readings = self.simulation_readings[measuring_device.id]
             actual_readings = self.actual_readings[measuring_device.id]
-            res[:,j] = (actual_readings-simulation_readings)/self.targetMeasuringDevices[measuring_device]["scale_factor"]
+            res[:,j] = (actual_readings-simulation_readings)
+            sd = self.targetMeasuringDevices[measuring_device]["standardDeviation"]
+            res[:,j] = (0.5)**0.5*res[:,j]/sd
         res = res.flatten()
         return res
     
@@ -1136,3 +1223,99 @@ class Estimator():
         except FMICallException as inst:
             res = 10e+10*np.ones((len(self.targetMeasuringDevices)))
         return res
+    
+    def _loglike_ga_wrapper(self, 
+                            ga_instance: pygad.GA, 
+                            theta: np.ndarray, 
+                            solution_idx: int) -> float:
+        """
+        Wrapper for the GA log-likelihood function to handle boundary conditions and exceptions.
+
+        Args:
+            ga_instance (pygad.GA): The GA instance.
+            theta (np.ndarray): The parameter vector.
+            solution_idx (int): The index of the solution.
+
+        Returns:
+            float: The log-likelihood value.
+        """
+        outsideBounds = np.any(theta<self.lb) or np.any(theta>self.ub)
+        if outsideBounds:
+            return -1e+10
+        try:
+            loglike = self._loglike(theta)
+        except FMICallException as inst:
+            return -1e+10
+        return loglike
+    
+
+    def callback_generation(self, ga_instance):
+        print(f"Generation = {ga_instance.generations_completed}")
+        print(f"Fitness    = {ga_instance.best_solution()[1]}")
+        print(f"Change     = {ga_instance.best_solution()[1] - self.last_fitness}")
+        self.last_fitness = ga_instance.best_solution()[1]
+
+
+    def ga(self, 
+           num_generations: int=10,
+           num_parents_mating: int=25,
+           sol_per_pop: int=1000,
+           on_start: Callable=None,
+           on_fitness: Callable=None,
+           on_parents: Callable=None,
+           on_crossover: Callable=None,
+           on_mutation: Callable=None,
+           on_generation: Callable=None,
+           on_stop: Callable=None,
+           parallel_processing: List[str, int]=['process', 4]) -> None:
+        """
+        Run genetic algorithm (GA) estimation.
+
+        Args:
+            num_generations (int): Number of generations.
+            num_parents_mating (int): Number of parents for mating.
+            sol_per_pop (int): Number of solutions per population.
+            on_start (Callable): Callback function for start of the GA.
+            on_fitness (Callable): Callback function for fitness evaluation.
+            on_parents (Callable): Callback function for parent selection.
+            on_crossover (Callable): Callback function for crossover.
+            on_mutation (Callable): Callback function for mutation.
+            on_generation (Callable): Callback function for generation.
+            on_stop (Callable): Callback function for stopping condition.
+            parallel_processing (List[str, int]): Parallel processing options.
+        """
+        self.last_fitness = -np.inf
+        # self.pbar = tqdm(total=num_generations)
+        init_range_low = self.lb
+        init_range_high = self.ub
+        gene_space = [{"low": lb, "high": ub} for lb, ub in zip(self.lb, self.ub)]
+        ga_instance = pygad.GA(num_generations=num_generations,
+                                num_parents_mating=num_parents_mating,
+                                fitness_func=self._loglike_ga_wrapper,
+                                sol_per_pop=sol_per_pop,
+                                num_genes=self.ndim,
+                                init_range_low=init_range_low,
+                                init_range_high=init_range_high,
+                                gene_space=gene_space,
+                                on_start=on_start,
+                                on_fitness=on_fitness,
+                                on_parents=on_parents,
+                                on_crossover=on_crossover,
+                                on_mutation=on_mutation,
+                                on_generation=self.callback_generation,
+                                on_stop=on_stop,
+                                parallel_processing=parallel_processing,
+                                suppress_warnings=True)
+        ga_instance.run()
+        ga_instance.plot_fitness()
+        solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
+        
+
+# class on_generation_callback:
+#     def __init__(self, pbar: tqdm):
+#         self.pbar = pbar
+
+#     def __call__(self, ga_instance):
+#         solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
+#         des = f"Date: {datestr} logl: {str(int(solution_fitness))}"
+#         self.pbar.set_description(des)

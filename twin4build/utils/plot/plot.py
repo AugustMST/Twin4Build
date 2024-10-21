@@ -13,7 +13,7 @@ import matplotlib
 import os
 import itertools
 import shutil
-from twin4build.model.model import Model
+import twin4build.model.model as model
 import corner
 from matplotlib.colors import LinearSegmentedColormap
 from twin4build.utils.bayesian_inference import generate_quantiles
@@ -39,7 +39,12 @@ class PlotSettings:
     right_y_first = (0.86, 0.50)
     right_y_second = (0.975, 0.50)
     outward = 68
-    save_folder, isfile = mkdir_in_root(["generated_files", "plots"])
+
+    @classmethod
+    @property
+    def save_folder(cls):
+        save_folder, isfile = mkdir_in_root(["generated_files", "plots"])
+        return save_folder
 
 def on_pick(event, fig, graphs):
     legend = event.artist
@@ -1415,13 +1420,15 @@ def plot_bayesian_inference(intervals, time, ydata, show=True, subset=None, save
     new_intervals = []
     new_ydata = []
     metricsList = []
+
     if subset is not None:
         for ii, interval in enumerate(intervals):
             if interval["id"] in subset:
                 new_intervals.append(interval)
                 new_ydata.append(ydata[:,ii])
-    intervals = new_intervals
-    ydata = np.array(new_ydata).transpose()
+        intervals = new_intervals
+        ydata = np.array(new_ydata).transpose()
+
     facecolor = tuple(list(Colors.beis)+[0.5])
     edgecolor = tuple(list((0,0,0))+[0.1])
     # cmap = sns.dark_palette("#69d", reverse=True, as_cmap=True)
@@ -1651,10 +1658,10 @@ def plot_bayesian_inference(intervals, time, ydata, show=True, subset=None, save
                 plot_filename = f"bayesian_inference_{id}.png"
                 fig.savefig(plot_filename, dpi=300)
                 plt.close(fig)
+    if show:
+        plt.show()
 
-    if show and save_plot == False:
-        x = 1
-        # plt.show()
+
     if summarizeMetrics:
         return figs, axes, metricsList
     else:
@@ -2407,7 +2414,7 @@ def __setup_default_cmap(cmap, inttype):
     return cmap
 
 #---------------------------------------
-def get_attr_list(model: Model, subset=None):
+def get_attr_list(model: model.Model, subset=None):
     '''This function takes a model, the model should contain a chain_log, otherwise it does not work 
     0, number of steps
     1, number of temperatures
@@ -2457,7 +2464,7 @@ def get_attr_list(model: Model, subset=None):
 
     return attr_list
 
-def logl_plot(model: Model, show=True):
+def logl_plot(model: model.Model, show=True):
     'The function shows a logl-plot from a model, the model needs to have estimated parameters'
 
     ntemps = model.chain_log["chain.x"].shape[1]

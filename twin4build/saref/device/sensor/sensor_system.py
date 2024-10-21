@@ -152,7 +152,6 @@ class SensorSystem(Sensor):
         # self.addUncertainty = addUncertainty
         self._config = {"parameters": [],
                         "readings": {"filename": self.filename,
-                                     "df_input": self.df_input,
                                      "datecolumn": self.datecolumn,
                                      "valuecolumn": self.valuecolumn}
                         }
@@ -179,6 +178,27 @@ class SensorSystem(Sensor):
             endTime=None,
             stepSize=None):
         pass
+
+    def validate(self, p):
+        validated_for_simulator = True
+        validated_for_estimator = True
+        validated_for_evaluator = True
+        validated_for_monitor = True
+
+        if len(self.connectsAt)==0 and self.filename is None:
+            message = f"|CLASS: {self.__class__.__name__}|ID: {self.id}|: filename or df_input must be provided to enable use of Simulator, Estimator, Evaluator, and Monitor."
+            p(message, plain=True, status="WARNING")
+            validated_for_simulator = False
+            validated_for_estimator = False
+            validated_for_evaluator = False
+            validated_for_monitor = False
+
+        elif len(self.connectsAt)>0 and self.filename is None: # no particular reason to use validated_for_simulator here. 
+            message = f"|CLASS: {self.__class__.__name__}|ID: {self.id}|: filename or df_input must be provided to enable use of Estimator, and Monitor."
+            p(message, plain=True, status="WARNING")
+            validated_for_estimator = False
+            validated_for_monitor = False
+        return (validated_for_simulator, validated_for_estimator, validated_for_evaluator, validated_for_monitor)
 
     def initialize(self,
                     startTime=None,

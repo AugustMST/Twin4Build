@@ -5,11 +5,18 @@ from scipy.optimize import least_squares
 import numpy as np
 import os
 import sys
-from twin4build.utils.unit_converters.functions import to_degC_from_degK, to_degK_from_degC, do_nothing, change_sign, add, get, integrate, multiply
+from twin4build.utils.unit_converters.functions import to_degC_from_degK, to_degK_from_degC, do_nothing, change_sign, add, get, integrate, multiply_const, multiply
 import twin4build.base as base
 from twin4build.utils.signature_pattern.signature_pattern import SignaturePattern, Node, Exact, IgnoreIntermediateNodes, Optional
+import twin4build.utils.input_output_types as tps
 
 def get_signature_pattern():
+    """
+    Get the signature pattern of the FMU component.
+
+    Returns:
+        SignaturePattern: The signature pattern of the FMU component.
+    """
     node0 = Node(cls=base.Damper, id="<n<SUB>1</SUB>(Damper)>") #supply damper
     node1 = Node(cls=base.Damper, id="<n<SUB>2</SUB>(Damper)>") #return damper
     node2 = Node(cls=base.BuildingSpace, id="<n<SUB>3</SUB>(BuildingSpace)>")
@@ -17,7 +24,7 @@ def get_signature_pattern():
     node4 = Node(cls=base.SpaceHeater, id="<n<SUB>5</SUB>(SpaceHeater)>")
     node5 = Node(cls=base.Schedule, id="<n<SUB>6</SUB>(Schedule)>") #return valve
     node6 = Node(cls=base.OutdoorEnvironment, id="<n<SUB>7</SUB>(OutdoorEnvironment)>")
-    node7 = Node(cls=base.Sensor, id="<n<SUB>8</SUB>(Sensor)>")
+    node7 = Node(cls=(base.Coil, base.AirToAirHeatRecovery, base.Fan), id="<Coil, AirToAirHeatRecovery, Fan\nn<SUB>8</SUB>>")
     node8 = Node(cls=base.Temperature, id="<n<SUB>9</SUB>(Temperature)>")
     node9 = Node(cls=base.BuildingSpace, id="<n<SUB>10</SUB>(BuildingSpace)>")
     node10 = Node(cls=base.BuildingSpace, id="<n<SUB>11</SUB>(BuildingSpace)>")
@@ -39,8 +46,8 @@ def get_signature_pattern():
     sp.add_edge(Exact(object=node3, subject=node4, predicate="suppliesFluidTo"))
     sp.add_edge(Exact(object=node2, subject=node5, predicate="hasProfile"))
     sp.add_edge(Exact(object=node2, subject=node6, predicate="connectedTo"))
-    # sp.add_edge(IgnoreIntermediateNodes(object=node7, subject=node0, predicate="suppliesFluidTo"))
-    sp.add_edge(Exact(object=node7, subject=node8, predicate="observes"))
+    sp.add_edge(IgnoreIntermediateNodes(object=node0, subject=node7, predicate="hasFluidSuppliedBy"))
+    # sp.add_edge(Exact(object=node7, subject=node8, predicate="observes"))
     sp.add_edge(Exact(object=node9, subject=node2, predicate="connectedTo"))
     sp.add_edge(Exact(object=node10, subject=node2, predicate="connectedTo"))
     sp.add_edge(Exact(object=node11, subject=node2, predicate="connectedTo"))
@@ -60,7 +67,7 @@ def get_signature_pattern():
     sp.add_input("outdoorTemperature", node6, "outdoorTemperature")
     sp.add_input("outdoorCo2Concentration", node6, "outdoorCo2Concentration")
     sp.add_input("globalIrradiation", node6, "globalIrradiation")
-    sp.add_input("supplyAirTemperature", node7, "measuredValue")
+    sp.add_input("supplyAirTemperature", node7, ("outletAirTemperature", "primaryTemperatureOut", "outletAirTemperature"))
     sp.add_input("indoorTemperature_adj1", node9, "indoorTemperature")
     sp.add_input("indoorTemperature_adj2", node10, "indoorTemperature")
     sp.add_input("indoorTemperature_adj3", node11, "indoorTemperature")
@@ -81,6 +88,9 @@ def get_signature_pattern():
     return sp
 
 class BuildingSpace11AdjBoundaryOutdoorFMUSystem(FMUComponent, base.BuildingSpace, base.SpaceHeater):
+    """
+    A class representing an FMU of a building space with 11 adjacent spaces, a space heater, balanced supply and return ventilation, and an outdoor boundary.
+    """
     sp = [get_signature_pattern()]
     def __init__(self,
                 C_supply=None,
@@ -143,32 +153,32 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystem(FMUComponent, base.BuildingSpac
         self.fmu_path = os.path.join(uppath(os.path.abspath(__file__), 1), fmu_filename)
         self.unzipdir = unzip_fmu(self.fmu_path)
 
-        self.input = {'airFlowRate': None,
-                    'waterFlowRate': None,
-                    'supplyAirTemperature': None,
-                    'supplyWaterTemperature': None,
-                    'globalIrradiation': None,
-                    'outdoorTemperature': None,
-                    'numberOfPeople': None,
-                    "outdoorCo2Concentration": None,
-                    "indoorTemperature_adj1": None,
-                    "indoorTemperature_adj2": None,
-                    "indoorTemperature_adj3": None,
-                    "indoorTemperature_adj4": None,
-                    "indoorTemperature_adj5": None,
-                    "indoorTemperature_adj6": None,
-                    "indoorTemperature_adj7": None,
-                    "indoorTemperature_adj8": None,
-                    "indoorTemperature_adj9": None,
-                    "indoorTemperature_adj10": None,
-                    "indoorTemperature_adj11": None,
-                    "T_boundary": None,
-                    "m_infiltration": None,
-                    "T_infiltration": None}
-        self.output = {"indoorTemperature": None, 
-                       "indoorCo2Concentration": None, 
-                       "spaceHeaterPower": None,
-                        "spaceHeaterEnergy": None}
+        self.input = {'airFlowRate': tps.Scalar(),
+                    'waterFlowRate': tps.Scalar(),
+                    'supplyAirTemperature': tps.Scalar(),
+                    'supplyWaterTemperature': tps.Scalar(),
+                    'globalIrradiation': tps.Scalar(),
+                    'outdoorTemperature': tps.Scalar(),
+                    'numberOfPeople': tps.Scalar(),
+                    "outdoorCo2Concentration": tps.Scalar(),
+                    "indoorTemperature_adj1": tps.Scalar(),
+                    "indoorTemperature_adj2": tps.Scalar(),
+                    "indoorTemperature_adj3": tps.Scalar(),
+                    "indoorTemperature_adj4": tps.Scalar(),
+                    "indoorTemperature_adj5": tps.Scalar(),
+                    "indoorTemperature_adj6": tps.Scalar(),
+                    "indoorTemperature_adj7": tps.Scalar(),
+                    "indoorTemperature_adj8": tps.Scalar(),
+                    "indoorTemperature_adj9": tps.Scalar(),
+                    "indoorTemperature_adj10": tps.Scalar(),
+                    "indoorTemperature_adj11": tps.Scalar(),
+                    "T_boundary": tps.Scalar(),
+                    "m_infiltration": tps.Scalar(),
+                    "T_infiltration": tps.Scalar()}
+        self.output = {"indoorTemperature": tps.Scalar(), 
+                       "indoorCo2Concentration": tps.Scalar(), 
+                       "spaceHeaterPower": tps.Scalar(),
+                        "spaceHeaterEnergy": tps.Scalar()}
         
         self.FMUinputMap = {'airFlowRate': "m_a_flow",
                     'waterFlowRate': "m_w_flow",
@@ -243,7 +253,7 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystem(FMUComponent, base.BuildingSpac
         self.output_conversion = {"indoorTemperature": to_degC_from_degK,
                                   "indoorCo2Concentration": do_nothing,
                                   "spaceHeaterPower": change_sign,
-                                  "spaceHeaterEnergy": integrate(self.output, "spaceHeaterPower", conversion=multiply(1/3600/1000))}
+                                  "spaceHeaterEnergy": integrate(self.output, "spaceHeaterPower", conversion=multiply_const(1/3600/1000))}
 
         self.INITIALIZED = False
         self._config = {"parameters": list(self.FMUparameterMap.keys()) + ["T_boundary", "infiltration"],}
@@ -264,16 +274,21 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystem(FMUComponent, base.BuildingSpac
                     stepSize=None,
                     model=None):
         '''
-            This function initializes the FMU component by setting the start_time and fmu_filename attributes, 
-            and then sets the parameters for the FMU model.
+        Initialize the FMU component.
+
+        Args:
+            startTime (float, optional): The start time of the simulation. Defaults to None.
+            endTime (float, optional): The end time of the simulation. Defaults to None.
+            stepSize (float, optional): The step size of the simulation. Defaults to None.
+            model (Model, optional): The model of the simulation. Defaults to None.
         '''
         if self.INITIALIZED:
             self.reset()
         else:
             self.initialize_fmu()
             self.INITIALIZED = True ###
-        self.input["T_boundary"] = self.T_boundary
-        self.input["m_infiltration"] = self.infiltration
+        self.input["T_boundary"] = tps.Scalar(self.T_boundary)
+        self.input["m_infiltration"] = tps.Scalar(self.infiltration)
         self.output_conversion["spaceHeaterEnergy"].v = 0
 
         

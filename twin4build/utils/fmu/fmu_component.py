@@ -134,7 +134,7 @@ class FMUComponent:
         self.parameters = parameters
         for key in parameters.keys():
             if key in lookup_dict:
-                assert parameters[key] is not None, f"Parameter \"{key}\" is None."
+                assert parameters[key] is not None, f"|CLASS: {self.__class__.__name__}|ID: {self.id}|: \"{key}\" is None."
                 self.fmu.setReal([lookup_dict[key].valueReference], [parameters[key]])
 
     def _get_gradient(self, x_key):
@@ -218,7 +218,7 @@ class FMUComponent:
     def _do_step(self, secondTime=None, dateTime=None, stepSize=None):
         end_time = secondTime+stepSize
         for key in self.FMUinputMap.keys():
-            x = self.input_conversion[key](self.input[key], stepSize=stepSize)
+            x = self.input_conversion[key](self.input[key].get(), stepSize=stepSize)
             FMUkey = self.FMUinputMap[key]
             self.fmu.setReal([self.fmu_variables[FMUkey].valueReference], [x])
 
@@ -231,10 +231,10 @@ class FMUComponent:
         # However, this would need adjustments in the "SimulationResult" class and the "update_simulation_result" method.
         for key in self.FMUoutputMap.keys():
             FMUkey = self.FMUmap[key]
-            self.output[key] = self.fmu.getReal([self.fmu_variables[FMUkey].valueReference])[0]
+            self.output[key].set(self.fmu.getReal([self.fmu_variables[FMUkey].valueReference])[0])
 
         for key in self.output.keys():
-            self.output[key] = self.output_conversion[key](self.output[key], stepSize=stepSize)
+            self.output[key].set(self.output_conversion[key](self.output[key].get(), stepSize=stepSize))
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
         if self.doUncertaintyAnalysis:

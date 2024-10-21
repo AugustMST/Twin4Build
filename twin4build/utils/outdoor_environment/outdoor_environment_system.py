@@ -7,7 +7,7 @@ import os
 import twin4build.base as base
 from twin4build.utils.signature_pattern.signature_pattern import SignaturePattern, Node, Exact, IgnoreIntermediateNodes, Optional
 import warnings
-
+import twin4build.utils.input_output_types as tps
 def get_signature_pattern():
     node0 = Node(cls=base.OutdoorEnvironment, id="<n<SUB>1</SUB>(OutdoorEnvironment)>")
     sp = SignaturePattern(ownedBy="OutdoorEnvironmentSystem")
@@ -30,9 +30,9 @@ class OutdoorEnvironmentSystem(base.OutdoorEnvironment, System):
             warnings.warn("Neither \"df_input\" nor \"filename\" was provided as argument. The component will not be able to provide any output.")
             
         self.input = {}
-        self.output = {"outdoorTemperature": None,
-                       "globalIrradiation": None,
-                       "outdoorCo2Concentration": None}
+        self.output = {"outdoorTemperature": tps.Scalar(),
+                       "globalIrradiation": tps.Scalar(),
+                       "outdoorCo2Concentration": tps.Scalar()}
         self.filename = filename
         self.df = df_input
         self.cached_initialize_arguments = None
@@ -51,6 +51,22 @@ class OutdoorEnvironmentSystem(base.OutdoorEnvironment, System):
             endTime=None,
             stepSize=None):
         pass
+
+    def validate(self, p):
+        validated_for_simulator = True
+        validated_for_estimator = True
+        validated_for_evaluator = True
+        validated_for_monitor = True
+
+        if self.df is None and self.filename is None:
+            message = f"|CLASS: {self.__class__.__name__}|ID: {self.id}|: Either df_input or filename must be provided to enable use of Simulator, Estimator, Evaluator, and Monitor."
+            p(message, plain=True, status="WARNING")
+            validated_for_simulator = False
+            validated_for_estimator = False
+            validated_for_evaluator = False
+            validated_for_monitor = False
+
+        return (validated_for_simulator, validated_for_estimator, validated_for_evaluator, validated_for_monitor)
 
     def initialize(self,
                     startTime=None,
@@ -75,7 +91,7 @@ class OutdoorEnvironmentSystem(base.OutdoorEnvironment, System):
         self.stepIndex = 0
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
-        self.output["outdoorTemperature"] = self.df["outdoorTemperature"].iloc[self.stepIndex]
-        self.output["globalIrradiation"] = self.df["globalIrradiation"].iloc[self.stepIndex]
-        self.output["outdoorCo2Concentration"] = 400
+        self.output["outdoorTemperature"].set(self.df["outdoorTemperature"].iloc[self.stepIndex])
+        self.output["globalIrradiation"].set(self.df["globalIrradiation"].iloc[self.stepIndex])
+        self.output["outdoorCo2Concentration"].set(400)
         self.stepIndex += 1

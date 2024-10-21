@@ -12,7 +12,7 @@ setup(
     platforms=["Windows", "Linux"],
     packages=setuptools.find_packages(),
     include_package_data=True,
-    package_data={'': ['*.pickle', '*.xlsx', "*.pt", "*.fmu", "*.ini"]},
+    package_data={'': ['*.pickle', '*.xlsx', "*.pt", "*.fmu", "*.ini", "*.xlsm", "*.csv"]},
     install_requires=[
         "matplotlib",
         "networkx",
@@ -20,7 +20,7 @@ setup(
         "pandas",
         "torch",
         "openpyxl",
-        "pydot",
+        "pydot<=2.0.0",
         "tqdm",
         "requests",
         "pwlf",
@@ -34,7 +34,8 @@ setup(
         "prettytable",
         "corner",
         "jupyter",
-        "nbformat"
+        "nbformat",
+        "pygad"
     ],
     classifiers=["Programming Language :: Python :: 3"],
 )

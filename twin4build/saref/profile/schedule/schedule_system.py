@@ -5,6 +5,7 @@ from twin4build.saref4syst.system import System
 from twin4build.utils.signature_pattern.signature_pattern import SignaturePattern, Node, Exact, IgnoreIntermediateNodes
 import twin4build.base as base
 from twin4build.utils.time_series_input import TimeSeriesInputSystem
+import twin4build.utils.input_output_types as tps
 
 
 def get_signature_pattern():
@@ -48,7 +49,7 @@ class ScheduleSystem(base.Schedule, System):
         self.valuecolumn = 1
         random.seed(0)
         self.input = {}
-        self.output = {"scheduleValue": None}
+        self.output = {"scheduleValue": tps.Scalar()}
         self._config = {"parameters": ["weekDayRulesetDict",
                                         "weekendRulesetDict",
                                         "mondayRulesetDict",
@@ -68,6 +69,30 @@ class ScheduleSystem(base.Schedule, System):
     @property
     def config(self):
         return self._config
+    
+    def validate(self, p):
+        validated_for_simulator = True
+        validated_for_estimator = True
+        validated_for_evaluator = True
+        validated_for_monitor = True
+
+        if (self.useFile and self.filename is None):
+            message = f"|CLASS: {self.__class__.__name__}|ID: {self.id}|: filename must be provided if useFile is True to enable use of Simulator, Estimator, Evaluator, and Monitor."
+            p(message, plain=True, status="WARNING")
+            validated_for_simulator = False
+            validated_for_estimator = False
+            validated_for_evaluator = False
+            validated_for_monitor = False
+
+        elif (self.useFile==False and self.weekDayRulesetDict is None):
+            message = f"|CLASS: {self.__class__.__name__}|ID: {self.id}|: weekDayRulesetDict must be provided if useFile is False to enable use of Simulator, Estimator, Evaluator, and Monitor."
+            p(message, plain=True, status="WARNING")
+            validated_for_simulator = False
+            validated_for_estimator = False
+            validated_for_evaluator = False
+            validated_for_monitor = False
+
+        return (validated_for_simulator, validated_for_estimator, validated_for_evaluator, validated_for_monitor)
 
     def cache(self,
             startTime=None,
@@ -204,6 +229,6 @@ class ScheduleSystem(base.Schedule, System):
             self.do_step_instance.do_step(secondTime, dateTime, stepSize)
             self.output = self.do_step_instance.output
         else:
-            self.output["scheduleValue"] = self.get_schedule_value(dateTime)
+            self.output["scheduleValue"].set(self.get_schedule_value(dateTime))
 
         

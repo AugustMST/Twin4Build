@@ -10,10 +10,12 @@ from twin4build.utils.plot.plot import get_fig_axes, load_params
 from twin4build.utils.plot.plot import bar_plot_line_format
 from twin4build.saref.property_.temperature.temperature import Temperature
 from twin4build.saref.property_.Co2.Co2 import Co2
+from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.opening_position.opening_position import OpeningPosition #This is in use
 from twin4build.saref.property_.energy.energy import Energy #This is in use
 from twin4build.model.model import Model
 from twin4build.saref4bldg.building_space.building_space import BuildingSpace
+from twin4build.evaluator.evaluator_kpi_functions import *
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -32,15 +34,37 @@ class Evaluator:
     def __init__(self):
         self.simulator = Simulator()
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_):
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_, model, electricity_prices = None):
         
         '''
-            The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
-            a measuring device, an evaluation metric, and a property to be evaluated. 
-            If the property is a Temperature, it calculates the discomfort of occupants based on the
-            difference between the temperature readings and the setpoint value over time. If the property is an Energy, 
-            it calculates the energy consumption over time. The KPI is then returned.
+        The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
+        a measuring device, an evaluation metric, and a property to be evaluated. 
+
+        Parameters:
+        - df_simulation_readings: DataFrame containing the kpi indexed by time.
+        - measuring_device: The name of the measuring device column in the DataFrame (the measuring device measuring property_).
+        - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage (eg: 'T', 'H', 'D')
+
+        Returns:
+        - DataFrame for the specified evaluation metric and kpi for the property_.
+
+        If property_ == Temperature:
+            It calculates the discomfort of occupants based on the
+            difference between the temperature readings and the setpoint value over time.
+
+        If property_ == CO2:
+            It calculates the discomfort of occupants based on the
+            difference between the temperature readings and the a fixed co2 value of 1000 ppm, but only if there is occupancy in the specific space.
+
+        If property_ == Energy:
+            It returns the energy consumption over time.
+
+        If property_ == Power:
+            It returns the power usage based on power readings.
         '''
+
+        if property_ == None:
+            property_ = model.component_dict[measuring_device].observes
 
         if isinstance(property_, Temperature):
             assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
@@ -86,6 +110,17 @@ class Evaluator:
                 filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
                 filtered_df = filtered_df.last() - filtered_df.first()
             kpi = filtered_df[measuring_device]
+        
+        elif isinstance(property_, Co2):
+            assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
+            kpi = CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model)
+
+        elif isinstance(property_, Power):
+            assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
+            kpi = power_kpi_function(df_simulation_readings, measuring_device, evaluation_metric)
+
+            if electricity_prices is not None:
+                kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
 
         return kpi
 
@@ -171,7 +206,7 @@ class Evaluator:
                 df_simulation_readings = self.simulator.get_simulation_readings()
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
                     property_ = model.component_dict[measuring_device].observes
-                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_)
+                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_, model)
                     kpi_dict[measuring_device].insert(0, model.id, kpi)
                     if "time" not in kpi_dict[measuring_device]:
                         kpi_dict[measuring_device].insert(0, "time", kpi.index)
@@ -368,8 +403,25 @@ class Evaluator:
                     fig.suptitle(measuring_device, fontsize=18)
                     self.simulation_readings_dict[measuring_device].plot(ax=ax, rot=0).legend(fontsize=8)
 
-        if show:
-            plt.show()    
+        elif method=="optimize":
+                    for model in models:
+                        self.simulator.simulate(model,
+                                            stepSize=stepSize,
+                                            startTime=startTime,
+                                            endTime=endTime)
+                        df_simulation_readings = self.simulator.get_simulation_readings()
 
+                        for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
+                            property_ = model.component_dict[measuring_device].observes
+                            kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model)
+                            kpi_dict[measuring_device].insert(0, model.id, kpi)
+                            if "time" not in kpi_dict[measuring_device]:
+                                kpi_dict[measuring_device].insert(0, "time", kpi.index)
+                    
+        if show:
+            plt.show()
+
+        if method == 'optimize':
+            return kpi_dict   
 
 

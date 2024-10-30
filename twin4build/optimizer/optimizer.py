@@ -40,7 +40,7 @@ class Optimizer:
                 tchebycheff_cost_list.append(tchebycheff_cost)
 
             fitness = -max(tchebycheff_cost_list)
-            print(fitness)
+
             return fitness
         
         return fitness_function

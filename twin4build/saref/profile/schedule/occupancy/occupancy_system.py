@@ -144,5 +144,6 @@ class OccupancySystem(base.Schedule, System):
         
         # diff equation
         self.output["scheduleValue"].set((self.airMass*(self.input["indoorCO2Concentration"]-self.previous_indoorCO2Concentration)/stepSize - self.outdoorCo2Concentration*(self.input["supplyAirFlowRate"] + self.infiltration) + self.input["indoorCO2Concentration"]*(self.input["exhaustAirFlowRate"]+self.infiltration))/(self.generationCo2Concentration*1e+6))
+        self.output["scheduleValue"].round()
         if self.output["scheduleValue"] < 0: self.output["scheduleValue"].set(0)
         self.previous_indoorCO2Concentration = self.input["indoorCO2Concentration"]

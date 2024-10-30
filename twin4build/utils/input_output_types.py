@@ -167,6 +167,9 @@ class Scalar():
         copy = Scalar()
         copy.scalar = self.scalar
         return copy
+    
+    def round(self):
+        self.scalar = round(self.scalar)
 
 
 def test():

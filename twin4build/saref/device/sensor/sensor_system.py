@@ -164,7 +164,7 @@ def get_temperature_before_air_to_air_exhaust_side():
 
     sp.add_edge(Exact(object=node2, subject=node9, predicate="subSystemOf"))
     
-    sp.add_input("measuredValue", node2, ("primaryTemperatureIn"))
+    sp.add_input("measuredValue", node2, ("secondaryTemperatureIn"))
 
     sp.add_modeled_node(node0)
 
@@ -179,11 +179,11 @@ def get_temperature_after_air_to_air_supply_side():
 
     sp = SignaturePattern(ownedBy="SensorSystem")
     sp.add_edge(Exact(object=node0, subject=node1, predicate="observes"))
-    sp.add_edge(IgnoreIntermediateNodes(object=node0, subject=node2, predicate="hasFluidSuppliedBy"))
+    sp.add_edge(Exact(object=node0, subject=node2, predicate="hasFluidSuppliedBy"))
 
     sp.add_edge(Exact(object=node2, subject=node9, predicate="subSystemOf"))
     
-    sp.add_input("measuredValue", node2, ("primaryTemperatureIn"))
+    sp.add_input("measuredValue", node2, ("primaryTemperatureOut"))
 
     sp.add_modeled_node(node0)
 
@@ -198,28 +198,28 @@ def get_temperature_after_air_to_air_exhaust_side():
 
     sp = SignaturePattern(ownedBy="SensorSystem")
     sp.add_edge(Exact(object=node0, subject=node1, predicate="observes"))
-    sp.add_edge(IgnoreIntermediateNodes(object=node2, subject=node0, predicate="returnsFluidTo"))
+    sp.add_edge(Exact(object=node2, subject=node0, predicate="returnsFluidTo"))
 
     sp.add_edge(Exact(object=node2, subject=node9, predicate="subSystemOf"))
     
-    sp.add_input("measuredValue", node2, ("primaryTemperatureIn"))
+    sp.add_input("measuredValue", node2, ("secondaryTemperatureOut"))
 
     sp.add_modeled_node(node0)
 
     return sp
 
 class SensorSystem(Sensor):
-    sp = [get_signature_pattern_input(), 
+    sp = [get_temperature_before_air_to_air_supply_side(),
+          get_temperature_before_air_to_air_exhaust_side(),
+          get_temperature_after_air_to_air_supply_side(),
+          get_temperature_after_air_to_air_exhaust_side(),
+          get_signature_pattern_input(), 
           get_flow_signature_pattern_after_coil_air_side(),
           get_flow_signature_pattern_after_coil_water_side(),
           get_flow_signature_pattern_before_coil_water_side(),
           get_space_temperature_signature_pattern(),
           get_space_co2_signature_pattern(),
-          get_position_signature_pattern(), 
-          get_temperature_before_air_to_air_supply_side(),
-          get_temperature_before_air_to_air_exhaust_side(),
-          get_temperature_after_air_to_air_supply_side(),
-          get_temperature_after_air_to_air_exhaust_side()
+          get_position_signature_pattern(),
           ]
     def __init__(self,
                  filename=None,

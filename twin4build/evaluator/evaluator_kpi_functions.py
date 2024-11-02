@@ -56,6 +56,7 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
     occupancy_df = get_occupancy_df(df_simulation_readings=df_simulation_readings, model=model, measuring_device=measuring_device)
 
     filtered_df['is_occupied'] = occupancy_df["occupancy_value"] > 0
+    occupancy_df["occupancy_value"] = occupancy_df["occupancy_value"].round()
 
     # Calculate dt only for occupied times
     dt = filtered_df['is_occupied'] * filtered_df.index.to_series().diff().dt.total_seconds() / 3600
@@ -63,8 +64,6 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
     # Calculate discomfort only where the room is occupied
     filtered_df["discomfort"] = (filtered_df["co2_readings"] - ideal_co2_level) * dt
     filtered_df["discomfort"] = filtered_df["discomfort"].mask(filtered_df["discomfort"] < 0, 0)
-
-    print(filtered_df.head(5))
 
     if evaluation_metric == "T":
         filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()

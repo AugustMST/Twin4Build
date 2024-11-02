@@ -94,11 +94,5 @@ class Optimizer:
             # Append the best solution to the list
             self.best_individuals_per_generation.append(best_solution)
 
-            # Print the generation number and best fitness value
-            print(f"Generation {ga_instance.generations_completed}: Best Fitness = {-best_solution_fitness}")
-        else:
-            # If lists are empty, handle this case (for example, by printing a message or taking other actions)
-            print(f"Generation {ga_instance.generations_completed}: No best solution found yet.")
-
         return self.best_individuals_per_generation
 

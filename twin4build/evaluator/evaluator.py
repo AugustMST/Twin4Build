@@ -34,7 +34,7 @@ class Evaluator:
     def __init__(self):
         self.simulator = Simulator()
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_, model, electricity_prices = None):
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_ = None, model = None, electricity_prices = None):
         
         '''
         The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
@@ -62,6 +62,18 @@ class Evaluator:
         If property_ == Power:
             It returns the power usage based on power readings.
         '''
+
+        space = model.component_dict[measuring_device].isContainedIn
+
+        schedule = space.hasProfile
+
+        print("schedule: ", schedule)
+
+        modeled_schedule = self.simulator.model
+
+        print("test:", modeled_schedule)
+
+        
 
         if property_ == None:
             property_ = model.component_dict[measuring_device].observes

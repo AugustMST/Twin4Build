@@ -3,6 +3,7 @@ from twin4build.simulator.simulator import Simulator
 from twin4build.monitor.monitor import Monitor
 from twin4build.estimator.estimator import Estimator
 from twin4build.evaluator.evaluator import Evaluator
+from twin4build.optimizer.optimizer import Optimizer
 from twin4build.components import PiecewiseLinearSystem
 from twin4build.components import PiecewiseLinearSupplyWaterTemperatureSystem
 from twin4build.components import TimeSeriesInputSystem

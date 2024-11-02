@@ -1,6 +1,8 @@
 import pygad
 import twin4build.base as base
 from datetime import timedelta  # Import if needed for time calculations
+from fmpy.fmi2 import FMICallException
+import pandas as pd
 
 class Optimizer:
     def __init__(self, model=None):
@@ -27,19 +29,25 @@ class Optimizer:
 
             print(setpoint_schedule.weekDayRulesetDict)
 
-            # Run the simulation
-            simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime, show_progress_bar=False)
-            df = simulator.get_simulation_readings()
+            try:
+                # Run the simulation
+                simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime, show_progress_bar=False)
+                df = simulator.get_simulation_readings()
 
-            tchebycheff_cost_list = []
+                tchebycheff_cost_list = []
 
-            for i in range(len(measuring_devices)):
-                cost = evaluator.get_kpi(df, measuring_devices[i], evaluation_metric="T", property_=None, model=model, electricity_prices = electricity_price)
-                cost = cost.iloc[0]
-                tchebycheff_cost = weights[i] * abs(cost - tchebycheff_z_star[i])
-                tchebycheff_cost_list.append(tchebycheff_cost)
+                for i in range(len(measuring_devices)):
+                    cost = evaluator.get_kpi(df, measuring_devices[i], evaluation_metric="T", property_=None, model=model, electricity_prices=electricity_price)
+                    cost = cost.iloc[0]
+                    tchebycheff_cost = weights[i] * abs(cost - tchebycheff_z_star[i])
+                    tchebycheff_cost_list.append(tchebycheff_cost)
 
-            fitness = -max(tchebycheff_cost_list)
+                # Calculate fitness as the negative of the max tchebycheff cost (minimization)
+                fitness = -max(tchebycheff_cost_list)
+
+            except FMICallException as e:
+                # print(f"Exception in simulation: {e}")
+                fitness = -1e+10  # Large negative fitness to penalize this solution
 
             return fitness
         
@@ -76,7 +84,6 @@ class Optimizer:
         solution, solution_fitness, solution_idx = ga_instance.best_solution()
         return solution, solution_fitness  # Return the best solution and its fitness
     
-        
     # Optional: Callback function to print progress at each generation and store the best solution
     def callback_generation(self, ga_instance):
         # Ensure that the lists are not empty before accessing them
@@ -94,3 +101,4 @@ class Optimizer:
             print(f"Generation {ga_instance.generations_completed}: No best solution found yet.")
 
         return self.best_individuals_per_generation
+

@@ -53,7 +53,7 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
     filtered_df['is_occupied'] = False
 
     # The name 'Occupancy schedule" is fixed in the moment, find work around + talk to jakob about using model as input (so you dont have to set up a simulator)
-    occupancy_df = get_occupancy_df(df_simulation_readings=df_simulation_readings, model=model)
+    occupancy_df = get_occupancy_df(df_simulation_readings=df_simulation_readings, model=model, measuring_device=measuring_device)
 
     filtered_df['is_occupied'] = occupancy_df["occupancy_value"] > 0
 
@@ -76,16 +76,17 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
 
     return kpi
 
-def get_occupancy_df(df_simulation_readings, model):
-    occupancy_schedule_values = model.component_dict["[029A][029A_space_heater]"].savedInput["numberOfPeople"]
-    
+def get_occupancy_df(df_simulation_readings, model, measuring_device):
+    # Schedule Values
+    space = model.component_dict[measuring_device].isContainedIn
+    schedule = space.hasProfile
+    modeled_schedule = model.instance_map_reversed[schedule]
+    occupancy_schedule_values = modeled_schedule.savedOutput["scheduleValue"]
+
     start_time = df_simulation_readings.index.min()
     end_time = df_simulation_readings.index.max()
-
     num_points = len(occupancy_schedule_values)
-
     total_time_seconds = (end_time - start_time).total_seconds()
-
     time_interval_seconds = total_time_seconds / (num_points - 1)
 
     occupancy_time_index = pd.date_range(start=start_time, periods=num_points, freq=pd.to_timedelta(time_interval_seconds, unit='s'))

@@ -63,64 +63,21 @@ class Evaluator:
             It returns the power usage based on power readings.
         '''
 
-        space = model.component_dict[measuring_device].isContainedIn
-
-        schedule = space.hasProfile
-
-        print("schedule: ", schedule)
-
-        modeled_schedule = self.simulator.model
-
-        print("test:", modeled_schedule)
-
-        
-
         if property_ == None:
             property_ = model.component_dict[measuring_device].observes
-
+            
         if isinstance(property_, Temperature):
             assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
             
-            
-            # assert property_.isControlledBy is not None, f"Property belonging to measuring device \"{measuring_device}\" is not controlled and does not have a setpoint. Only properties that are controlled can be evaluated (currently)."
-            
-            controller = property_.isObservedBy[0] #We assume that there is only one controller for each property or that they have the same setpoint schedule
-            schedule = controller.hasProfile
-            # modeled_components = self.simulator.model.instance_map[self.component_dict[controller.id]]
-            # base_controller = [v for v in modeled_components if isinstance(v, base.Controller)][0]
-            modeled_schedule = self.simulator.model.instance_map_reversed[schedule]
-            schedule_readings = modeled_schedule.savedOutput["scheduleValue"]
-            filtered_df = pd.DataFrame()
-            filtered_df.insert(0, "time", df_simulation_readings.index)
-            filtered_df.insert(1, "schedule_readings", schedule_readings)
-            filtered_df.set_index("time", inplace=True) #Important for inserting in next line
-            filtered_df.insert(1, measuring_device, df_simulation_readings[measuring_device])
-            dt = filtered_df.index.to_series().diff().apply(lambda x: x.total_seconds()/3600)
-            filtered_df["discomfort"] = (filtered_df["schedule_readings"]-filtered_df[measuring_device])*dt
-            filtered_df["discomfort"] = filtered_df.discomfort.mask(filtered_df["discomfort"]<0, 0)
-            filtered_df["discomfort"].clip(lower=0, inplace=True)
-
-            
-
-            # filtered_df.loc[filtered_df.between_time('17:00', '8:00').index] = 0 #Set times outside to 0
-            # filtered_df.loc[(filtered_df.index.weekday==5)|(filtered_df.index.weekday==6)] = 0 #Set times outside to 0
-
-            filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
-            if evaluation_metric=="T":
-                filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
-            else:
-                # filtered_df = filtered_df.set_index('time').resample(f'1{evaluation_metric}')
-                filtered_df = filtered_df.resample(f'1{evaluation_metric}')
-                filtered_df = filtered_df.last() - filtered_df.first()
-            kpi = filtered_df["discomfort"]
+            kpi = Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model)
 
         elif isinstance(property_, Energy):
             if evaluation_metric=="T":
-                print(df_simulation_readings)
                 filtered_df = df_simulation_readings.tail(n=1).set_index(pd.Index(["Total"]))
             else:
                 filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
                 filtered_df = filtered_df.last() - filtered_df.first()
+            
             kpi = filtered_df[measuring_device]
         
         elif isinstance(property_, Co2):

@@ -245,9 +245,11 @@ class FMUComponent:
             self.output[key].set(self.fmu.getReal([self.fmu_variables[FMUkey].valueReference])[0])
 
         for key in self.output.keys():
-            self.output[key].set(self.output_conversion[key](self.output[key].get(), stepSize=stepSize))
+            if key in self.output_conversion:
+                self.output[key].set(self.output_conversion[key](self.output[key].get(), stepSize=stepSize))
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
+        self.output.update(self.input)
         if self.doUncertaintyAnalysis:
             #This creates in a memory leak. If called many times, it will use all memory
             self.fmu_state = self.fmu.getFMUState() ###

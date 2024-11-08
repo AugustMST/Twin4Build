@@ -10,7 +10,7 @@ import twin4build.base as base
 from twin4build.utils.signature_pattern.signature_pattern import SignaturePattern, Node, Exact, IgnoreIntermediateNodes, Optional
 import twin4build.utils.input_output_types as tps
 
-def get_signature_pattern():
+def get_signature_pattern_supply_fan():
     node0 = Node(cls=(base.FlowJunction,), id="<Meter\nn<SUB>1</SUB>>")
     node1 = Node(cls=(base.Fan, base.AirToAirHeatRecovery, base.Coil), id="<Fan, AirToAirHeatRecovery, Coil\nn<SUB>2</SUB>>")
     node2 = Node(cls=(base.Fan,), id="<Fan\nn<SUB>3</SUB>>")
@@ -39,8 +39,39 @@ def get_signature_pattern():
     sp.add_modeled_node(node2)
     return sp
 
+def get_signature_pattern_exhaust_fan():
+    node0 = Node(cls=(base.FlowJunction,), id="<Meter\nn<SUB>1</SUB>>")
+    node1 = Node(cls=(base.Fan, base.AirToAirHeatRecovery, base.Coil), id="<Fan, AirToAirHeatRecovery, Coil\nn<SUB>2</SUB>>")
+    node2 = Node(cls=(base.Fan,), id="<Fan\nn<SUB>3</SUB>>")
+    node3 = Node(cls=(base.PropertyValue), id="<PropertyValue\nn<SUB>4</SUB>>")
+    node4 = Node(cls=(float, int), id="<Float, Int\nn<SUB>5</SUB>>")
+    node5 = Node(cls=base.NominalPowerRate, id="<nominalPowerRate\nn<SUB>6</SUB>>")
+    node6 = Node(cls=base.PropertyValue, id="<PropertyValue\nn<SUB>7</SUB>>")
+    node7 = Node(cls=(float, int), id="<Float, Int\nn<SUB>8</SUB>>")
+    node8 = Node(cls=base.NominalAirFlowRate, id="<nominalAirFlowRate\nn<SUB>9</SUB>>")
+
+
+
+    sp = SignaturePattern(ownedBy="FanFMUSystem")
+    sp.add_edge(IgnoreIntermediateNodes(object=node2, subject=node0, predicate="returnsFluidTo"))
+    sp.add_edge(IgnoreIntermediateNodes(object=node1, subject=node2, predicate="returnsFluidTo"))
+    sp.add_edge(Optional(object=node3, subject=node4, predicate="hasValue"))
+    sp.add_edge(Optional(object=node3, subject=node5, predicate="isValueOfProperty"))
+    sp.add_edge(Optional(object=node2, subject=node3, predicate="hasPropertyValue"))
+    sp.add_edge(Optional(object=node6, subject=node7, predicate="hasValue"))
+    sp.add_edge(Optional(object=node6, subject=node8, predicate="isValueOfProperty"))
+    sp.add_edge(Optional(object=node2, subject=node6, predicate="hasPropertyValue"))
+    sp.add_input("airFlowRate", node0, "airFlowRateOut")
+    sp.add_input("inletAirTemperature", node1, ("outletAirTemperature", "secondaryTemperatureOut", "outletAirTemperature"))
+    sp.add_parameter("nominalPowerRate.hasValue", node4)
+    sp.add_parameter("nominalAirFlowRate.hasValue", node7)
+    sp.add_modeled_node(node2)
+    return sp
+
+
 class FanFMUSystem(FMUComponent, Fan):
-    sp = [get_signature_pattern()]
+    sp = [get_signature_pattern_supply_fan(),
+          get_signature_pattern_exhaust_fan()]
     def __init__(self,
                 c1=None,
                 c2=None,

@@ -1160,8 +1160,19 @@ class Model:
             if isinstance(row[df_dict["Controller"].columns.get_loc("isContainedIn")], str):
                 controller.isContainedIn = self.component_base_dict[row[df_dict["Controller"].columns.get_loc("isContainedIn")]]
 
-            _property = self.property_dict[row[df_dict["Controller"].columns.get_loc("observes")]]
-            controller.observes = _property
+            # _property = self.property_dict[row[df_dict["Controller"].columns.get_loc("observes")]]
+            # controller.observes = _property
+
+            if "observes" not in df_dict["Controller"].columns:
+                warnings.warn("The property \"observes\" is not found in \"RulebasedController\" sheet. This is ignored for now but will raise an error in the future. It probably is caused by using an outdated configuration file.")
+            else:
+                if isinstance(row[df_dict["Controller"].columns.get_loc("observes")], str):
+                    observes = row[df_dict["Controller"].columns.get_loc("observes")].split(";")
+                    observes = [self.property_dict[component_name] for component_name in observes]
+                    controller.observes.extend(observes)
+                else:
+                    message = f"Required property \"observes\" not set for controller object \"{controller.id}\""
+                    raise(ValueError(message))
 
 
             if "controls" not in df_dict["Controller"].columns:
@@ -1191,8 +1202,20 @@ class Model:
 
             if isinstance(row[df_dict["SetpointController"].columns.get_loc("isContainedIn")], str):
                 controller.isContainedIn = self.component_base_dict[row[df_dict["SetpointController"].columns.get_loc("isContainedIn")]]
-            _property = self.property_dict[row[df_dict["SetpointController"].columns.get_loc("observes")]]
-            controller.observes = _property
+
+            # _property = self.property_dict[row[df_dict["SetpointController"].columns.get_loc("observes")]]
+            # controller.observes = _property
+
+            if "observes" not in df_dict["SetpointController"].columns:
+                warnings.warn("The property \"observes\" is not found in \"RulebasedController\" sheet. This is ignored for now but will raise an error in the future. It probably is caused by using an outdated configuration file.")
+            else:
+                if isinstance(row[df_dict["SetpointController"].columns.get_loc("observes")], str):
+                    observes = row[df_dict["SetpointController"].columns.get_loc("observes")].split(";")
+                    observes = [self.property_dict[component_name] for component_name in observes]
+                    controller.observes.extend(observes)
+                else:
+                    message = f"Required property \"observes\" not set for controller object \"{controller.id}\""
+                    raise(ValueError(message))
 
             if "controls" not in df_dict["SetpointController"].columns:
                 warnings.warn("The property \"controls\" is not found in \"SetpointController\" sheet. This is ignored for now but will raise an error in the future. It probably is caused by using an outdated configuration file.")
@@ -1245,8 +1268,19 @@ class Model:
             if isinstance(row[df_dict["RulebasedController"].columns.get_loc("isContainedIn")], str):
                 controller.isContainedIn = self.component_base_dict[row[df_dict["RulebasedController"].columns.get_loc("isContainedIn")]]
             
-            _property = self.property_dict[row[df_dict["RulebasedController"].columns.get_loc("observes")]]
-            controller.observes = _property
+            # _property = self.property_dict[row[df_dict["RulebasedController"].columns.get_loc("observes")]]
+            # controller.observes = _property
+
+            if "observes" not in df_dict["RulebasedController"].columns:
+                warnings.warn("The property \"observes\" is not found in \"RulebasedController\" sheet. This is ignored for now but will raise an error in the future. It probably is caused by using an outdated configuration file.")
+            else:
+                if isinstance(row[df_dict["RulebasedController"].columns.get_loc("observes")], str):
+                    observes = row[df_dict["RulebasedController"].columns.get_loc("observes")].split(";")
+                    observes = [self.property_dict[component_name] for component_name in observes]
+                    controller.observes.extend(observes)
+                else:
+                    message = f"Required property \"observes\" not set for controller object \"{controller.id}\""
+                    raise(ValueError(message))
 
 
             if "controls" not in df_dict["RulebasedController"].columns:
@@ -1305,8 +1339,11 @@ class Model:
             sensor = self.component_base_dict[sensor_name]
 
             if isinstance(row[df_dict["Sensor"].columns.get_loc("observes")], str):
-                properties = self.property_dict[row[df_dict["Sensor"].columns.get_loc("observes")]]
-                sensor.observes = properties
+                # properties = self.property_dict[row[df_dict["Sensor"].columns.get_loc("observes")]]
+                # sensor.observes = properties
+                observes = row[df_dict["Sensor"].columns.get_loc("observes")].split(";")
+                observes = [self.property_dict[component_name] for component_name in observes]
+                sensor.observes.extend(observes)
             else:
                 message = f"Required property \"observes\" not set for Sensor object \"{sensor.id}\""
                 raise(ValueError(message))
@@ -1339,8 +1376,11 @@ class Model:
             meter_name = row[df_dict["Meter"].columns.get_loc("id")]
             meter = self.component_base_dict[meter_name]
             if isinstance(row[df_dict["Meter"].columns.get_loc("observes")], str):
-                properties = self.property_dict[row[df_dict["Meter"].columns.get_loc("observes")]]
-                meter.observes = properties
+                # properties = self.property_dict[row[df_dict["Meter"].columns.get_loc("observes")]]
+                # meter.observes = properties
+                observes = row[df_dict["Meter"].columns.get_loc("observes")].split(";")
+                observes = [self.property_dict[component_name] for component_name in observes]
+                meter.observes.extend(observes)
             else:
                 message = f"Required property \"observes\" not set for Sensor object \"{meter.id}\""
                 raise(ValueError(message))
@@ -2025,7 +2065,8 @@ class Model:
         for controller in controller_instances:
             if controller.isContainedIn is not None:
                 self.update_attribute(controller.isContainedIn, "contains", controller)
-            self.update_attribute(controller.observes, "isObservedBy", controller)
+            for property_ in controller.observes:
+                self.update_attribute(property_, "isObservedBy", controller)
             for property_ in controller.controls:
                 self.update_attribute(property_, "isControlledBy", controller)
             for system in controller.subSystemOf:
@@ -2033,7 +2074,9 @@ class Model:
 
         for setpoint_controller in setpoint_controller_instances:
             self.update_attribute(setpoint_controller.isContainedIn, "contains", setpoint_controller)
-            self.update_attribute(setpoint_controller, "observes.isObservedBy", setpoint_controller)
+            # self.update_attribute(setpoint_controller, "observes.isObservedBy", setpoint_controller)
+            for property_ in setpoint_controller.observes:
+                self.update_attribute(property_, "isObservedBy", setpoint_controller)
             for property_ in setpoint_controller.controls:
                 self.update_attribute(property_, "isControlledBy", setpoint_controller)
             for system in setpoint_controller.subSystemOf:
@@ -2042,7 +2085,9 @@ class Model:
 
         for rulebased_controller in rulebased_controller_instances:
             self.update_attribute(rulebased_controller.isContainedIn, "contains", rulebased_controller)
-            self.update_attribute(rulebased_controller.observes, "isObservedBy", rulebased_controller)
+            # self.update_attribute(rulebased_controller.observes, "isObservedBy", rulebased_controller)
+            for property_ in rulebased_controller.observes:
+                self.update_attribute(property_, "isObservedBy", rulebased_controller)
             for property_ in rulebased_controller.controls:
                 self.update_attribute(property_, "isControlledBy", rulebased_controller)
             for system in rulebased_controller.subSystemOf:
@@ -2057,7 +2102,9 @@ class Model:
 
         for sensor in sensor_instances:
             self.update_attribute(sensor.isContainedIn, "contains", sensor)
-            self.update_attribute(sensor.observes, "isObservedBy", sensor)
+            # self.update_attribute(sensor.observes, "isObservedBy", sensor)
+            for property_ in sensor.observes:
+                self.update_attribute(property_, "isObservedBy", sensor)
             for system in sensor.subSystemOf:
                 self.update_attribute(system, "hasSubSystem", sensor)
             for component in sensor.hasFluidFedBy:
@@ -2075,7 +2122,9 @@ class Model:
 
         for meter in meter_instances:
             self.update_attribute(meter.isContainedIn, "contains", meter)
-            self.update_attribute(meter.observes, "isObservedBy", meter)
+            # self.update_attribute(meter.observes, "isObservedBy", meter)
+            for property_ in meter.observes:
+                self.update_attribute(property_, "isObservedBy", meter)
             for system in meter.subSystemOf:
                 self.update_attribute(system, "hasSubSystem", meter)
             for component in meter.hasFluidFedBy:
@@ -2664,6 +2713,7 @@ class Model:
             systems.PiecewiseLinearScheduleSystem.__name__: {},
             systems.TimeSeriesInputSystem.__name__: {},
             systems.OnOffSystem.__name__: {},
+            systems.RulebasedHeatingDamperController.__name__: {"inputSignal": tps.Scalar(0)}, 
             
         }
         initial_dict = {}

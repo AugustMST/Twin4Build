@@ -218,6 +218,17 @@ def get_temperature_after_air_to_air_exhaust_side():
 
     return sp
 
+def get_space_peer_signature_pattern():
+    node0 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>1</SUB>>")
+    node1 = Node(cls=(base.Peer), id="<Peer\nn<SUB>2</SUB>>")
+    node2 = Node(cls=(base.BuildingSpace), id="<BuildingSpace\nn<SUB>3</SUB>>")
+    sp = SignaturePattern(ownedBy="SensorSystem")
+    sp.add_edge(Exact(object=node0, subject=node1, predicate="observes"))
+    sp.add_edge(Exact(object=node1, subject=node2, predicate="isPropertyOf"))
+    sp.add_input("measuredValue", node2, ("peerBinary"))
+    sp.add_modeled_node(node0)
+    return sp
+
 class SensorSystem(Sensor):
     """A system representing a physical or virtual sensor in the building.
     

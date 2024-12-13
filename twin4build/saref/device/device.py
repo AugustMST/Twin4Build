@@ -27,7 +27,7 @@ class Device(physical_object.PhysicalObject):
     def __init__(self,
                 accomplishes: Union[task.Task, None]=None,
                 consistsOf: Union[device.Device, None]=None,
-                observes: Union[property_.Property, None]=None,
+                observes: Union[list, None]=None,
                 controls: Union[list, None]=None, ##################
                 hasFunction: Union[function.Function, None]=None,
                 hasManufacturer: Union[str, None]=None,
@@ -53,7 +53,7 @@ class Device(physical_object.PhysicalObject):
         import twin4build.saref.service.service as service
         assert isinstance(accomplishes, task.Task) or accomplishes is None, "Attribute \"accomplishes\" is of type \"" + str(type(accomplishes)) + "\" but must be of type \"" + str(task.Task) + "\""
         assert isinstance(consistsOf, device.Device) or consistsOf is None, "Attribute \"consistsOf\" is of type \"" + str(type(consistsOf)) + "\" but must be of type \"" + str(device.Device) + "\""
-        assert isinstance(observes, property_.Property) or observes is None, "Attribute \"observes\" is of type \"" + str(type(observes)) + "\" but must be of type \"" + str(property_.Property) + "\""
+        assert isinstance(observes, list) or observes is None, "Attribute \"observes\" is of type \"" + str(type(observes)) + "\" but must be of type \"" + str(list) + "\""
         assert isinstance(controls, list) or controls is None, "Attribute \"controls\" is of type \"" + str(type(controls)) + "\" but must be of type \"" + str(list) + "\""
         assert isinstance(hasFunction, function.Function) or hasFunction is None, "Attribute \"hasFunction\" is of type \"" + str(type(hasFunction)) + "\" but must be of type \"" + str(function.Function) + "\""
         assert isinstance(hasManufacturer, measurement.Measurement) or hasManufacturer is None, "Attribute \"hasManufacturer\" is of type \"" + str(type(hasManufacturer)) + "\" but must be of type \"" + str(measurement.Measurement) + "\""
@@ -66,9 +66,11 @@ class Device(physical_object.PhysicalObject):
         assert isinstance(offers, service.Service) or offers is None, "Attribute \"offers\" is of type \"" + str(type(offers)) + "\" but must be of type \"" + str(service.Service) + "\""
         self.accomplishes = accomplishes
         self.consistsOf = consistsOf
-        self.observes = observes
+        if observes is None:
+            observes = []
         if controls is None:
             controls = []
+        self.observes = observes
         self.controls = controls ####
         self.hasFunction = hasFunction
         self.hasManufacturer = hasManufacturer

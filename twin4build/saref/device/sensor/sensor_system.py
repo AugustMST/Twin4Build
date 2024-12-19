@@ -117,6 +117,29 @@ def get_space_temperature_signature_pattern():
     sp.add_modeled_node(node0)
     return sp
 
+def get_space_T_boundary_signature_pattern():
+    node0 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>1</SUB>>")
+    node1 = Node(cls=(base.Temperature), id="<Temperature\nn<SUB>2</SUB>>")
+    node2 = Node(cls=(base.BuildingSpace), id="<BuildingSpace\nn<SUB>3</SUB>>")
+    sp = SignaturePattern(ownedBy="SensorSystem")
+    sp.add_edge(Exact(object=node0, subject=node1, predicate="observes"))
+    sp.add_edge(Exact(object=node1, subject=node2, predicate="isPropertyOf"))
+    sp.add_edge(Exact(object=node0, subject=node2, predicate="isContainedIn"))
+    sp.add_input("measuredValue", node2, "T_boundary")
+    sp.add_modeled_node(node0)
+    return sp
+
+def get_signature_pattern_input_physical_sensor():
+    node0 = Node(cls=(base.Sensor,), id="<n<SUB>1</SUB>(Sensor)>")
+    node1 = Node(cls=(base.Temperature,), id="<n<SUB>2</SUB>(Property)>")
+    node2 = Node(cls=(base.BuildingSpace,), id="<n<SUB>2</SUB>(BuildingSpace)>")
+    sp = SignaturePattern(ownedBy="SensorSystem", priority=-5)
+    sp.add_edge(Exact(object=node0, subject=node1, predicate="observes"))
+    sp.add_edge(Exact(object=node2, subject=node1, predicate="hasProperty"))
+    sp.add_input("measuredValue", node0)
+    sp.add_modeled_node(node0)
+    return sp
+
 # Properties of spaces
 def get_space_co2_signature_pattern():
     node0 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>1</SUB>>")
@@ -261,10 +284,14 @@ class SensorSystem(Sensor):
           get_space_temperature_signature_pattern(),
           get_space_co2_signature_pattern(),
           get_position_signature_pattern(),
+          get_space_T_boundary_signature_pattern(),
+          get_signature_pattern_input_physical_sensor(),
+          get_space_peer_signature_pattern()
           ]
     def __init__(self,
             filename: Optional[str] = None,
             df_input: Optional[pd.DataFrame] = None,
+            is_physical_sensor_ = False,
             **kwargs) -> None:
         
         """Initialize the sensor system.
@@ -283,10 +310,13 @@ class SensorSystem(Sensor):
         super().__init__(**kwargs)
         self.filename = filename
         self.df_input = df_input
+        self.is_physical_sensor = is_physical_sensor_
         self.datecolumn = 0
         self.valuecolumn = 1
         self._config = {
-        "parameters": [],
+        "parameters": {
+            "is_physical_sensor": self.is_physical_sensor
+        },
         "readings": {
             "filename": self.filename,
             "datecolumn": self.datecolumn,
@@ -312,7 +342,8 @@ class SensorSystem(Sensor):
         assert (len(self.connectsAt)==0 and self.filename is None and self.df_input is None)==False, \
             f'Sensor object "{self.id}" has no inputs and the argument "filename" or "df_input" in the constructor was not provided.'
         
-        self.isPhysicalSystem = len(self.connectsAt) == 0
+        #self.isPhysicalSystem = len(self.connectsAt) == 0
+        self.isPhysicalSystem = self.is_physical_sensor
 
     def set_do_step_instance(self) -> None:
         """Set up the appropriate step instance based on sensor type.

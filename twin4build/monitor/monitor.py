@@ -9,6 +9,7 @@ from twin4build.saref.property_.opening_position.opening_position import Opening
 from twin4build.saref.property_.energy.energy import Energy #This is in use
 from twin4build.saref.property_.power.power import Power #This is in use
 from twin4build.saref.property_.flow.flow import Flow
+from twin4build.saref.property_.peer.peer import Peer
 from twin4build.model.model import Model
 from twin4build.simulator.simulator import Simulator
 import os
@@ -48,23 +49,26 @@ class Monitor:
             str: The y-axis label.
         """
         property_ = self.model.get_base_component(key).observes
-        if isinstance(property_, Temperature):
-            ylabel = r"Temperature [$^\circ$C]"
-        elif isinstance(property_, Co2):
-            ylabel = r"CO$_2$ [ppm]"
-        elif isinstance(property_, OpeningPosition):
-            ylabel = r"Position [0-100 \%]"
-        elif isinstance(property_, Energy):
-            ylabel = r"Energy [kWh]"
-        elif isinstance(property_, Power):
-            ylabel = r"Power [kW]"
-        elif isinstance(property_, Flow):
-            ylabel = r"Flow [kg/s]"
-        else:
-            #More properties should be added if needed
-            raise Exception(f"Unknown Property {str(type(property_))}")
-        return ylabel
-    
+        for i in range(len(property_)):
+            property_ = property_[i]
+            if isinstance(property_, Temperature):
+                ylabel = r"Temperature [$^\circ$C]"
+            elif isinstance(property_, Co2):
+                ylabel = r"CO$_2$ [ppm]"
+            elif isinstance(property_, OpeningPosition):
+                ylabel = r"Position [0-100 \%]"
+            elif isinstance(property_, Energy):
+                ylabel = r"Energy [kWh]"
+            elif isinstance(property_, Power):
+                ylabel = r"Power [kW]"
+            elif isinstance(property_, Flow):
+                ylabel = r"Flow [kg/s]"
+            elif isinstance(property_, Peer):
+                ylabel = r"Occupied [Binary yes/no]"
+            else:
+                raise Exception(f"Unknown Property {str(type(property_))}")
+            return ylabel
+        
     def get_error(self, key: str) -> np.ndarray:
         """
         Get the error between actual and simulated readings.
@@ -102,36 +106,42 @@ class Monitor:
             tuple: A tuple containing the performance gap, error band, and legend label.
         """
         property_ = self.model.get_base_component(key).observes
-        error_band_abs = 2
-        error_band_relative = 15 #%
-        if isinstance(property_, Temperature):
-            error_band = error_band_abs
-            err = self.get_error(key)
-            legend_label = f"{error_band}$^\circ$C error band"
-        elif isinstance(property_, Co2):
-            error_band = error_band_abs
-            err = self.get_error(key)
-            legend_label = f"{error_band} CO$_2$ error band"
-        elif isinstance(property_, OpeningPosition):
-            error_band = 0.2
-            err = self.get_error(key)
-            legend_label = f"{error_band} position error band"
-        elif isinstance(property_, Energy):
-            error_band = error_band_abs
-            err = self.get_error(key)
-            legend_label = f"{error_band} kWh error band"
-        elif isinstance(property_, Power):
-            error_band = error_band_relative
-            err = self.get_relative_error(key)
-            legend_label = f"{error_band}% error band"
-        elif isinstance(property_, Flow):
-            error_band = error_band_relative
-            err = self.get_relative_error(key)
-            legend_label = f"{error_band}% error band"
-        else:
-            #More properties should be added if needed
-            raise Exception(f"Unknown Property {str(type(property_))}")
-        return err, error_band, legend_label
+        for i in range(len(property_)):
+            property_ = property_[i]
+            error_band_abs = 2
+            error_band_relative = 15 #%
+            if isinstance(property_, Temperature):
+                error_band = error_band_abs
+                err = self.get_error(key)
+                legend_label = f"{error_band}$^\circ$C error band"
+            elif isinstance(property_, Co2):
+                error_band = error_band_abs
+                err = self.get_error(key)
+                legend_label = f"{error_band} CO$_2$ error band"
+            elif isinstance(property_, OpeningPosition):
+                error_band = 0.2
+                err = self.get_error(key)
+                legend_label = f"{error_band} position error band"
+            elif isinstance(property_, Energy):
+                error_band = error_band_abs
+                err = self.get_error(key)
+                legend_label = f"{error_band} kWh error band"
+            elif isinstance(property_, Power):
+                error_band = error_band_relative
+                err = self.get_relative_error(key)
+                legend_label = f"{error_band}% error band"
+            elif isinstance(property_, Flow):
+                error_band = error_band_relative
+                err = self.get_relative_error(key)
+                legend_label = f"{error_band}% error band"
+            elif isinstance(property_, Peer):
+                error_band = 0.05
+                err = self.get_error(key)
+                legend_label = f"{error_band} occupied error band"
+            else:
+                #More properties should be added if needed
+                raise Exception(f"Unknown Property {str(type(property_))}")
+            return err, error_band, legend_label
 
     def save_plots(self):
         """

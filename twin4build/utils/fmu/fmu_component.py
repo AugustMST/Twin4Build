@@ -164,9 +164,17 @@ class FMUComponent:
     
     def _do_step(self, secondTime=None, dateTime=None, stepSize=None):
         for key in self.FMUinputMap.keys():
-            x = self.input_conversion[key](self.input[key].get(), stepSize=stepSize)
-            FMUkey = self.FMUinputMap[key]
-            self.fmu.setReal([self.fmu_variables[FMUkey].valueReference], [x])
+            try:
+                x = self.input_conversion[key](self.input[key].get(), stepSize=stepSize)
+                FMUkey = self.FMUinputMap[key]
+                self.fmu.setReal([self.fmu_variables[FMUkey].valueReference], [x])
+            except Exception as e:
+                print("input[key]:", self.input[key])
+                print("FMUkey:", self.FMUinputMap[key])
+                print("FMUinputMap:", self.FMUinputMap)
+                x = self.input_conversion[key](self.input[key].get(), stepSize=stepSize)
+                FMUkey = self.FMUinputMap[key]
+                self.fmu.setReal([self.fmu_variables[FMUkey].valueReference], [x])
 
         self.fmu.doStep(currentCommunicationPoint=secondTime, communicationStepSize=stepSize)
             

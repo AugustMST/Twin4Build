@@ -101,8 +101,11 @@ class Simulator:
         """
         for component_group in model.execution_order:
             for component in component_group:
-                self._do_component_timestep(component)
-
+                try:
+                    self._do_component_timestep(component)
+                except Exception as e:
+                    print(component)
+                    self._do_component_timestep(component)
         for component in model.flat_execution_order:
             component.update_results()
 

@@ -1344,9 +1344,9 @@ class Model:
                 observes = row[df_dict["Sensor"].columns.get_loc("observes")].split(";")
                 observes = [self.property_dict[component_name] for component_name in observes]
                 sensor.observes.extend(observes)
-            else:
+            """else:
                 message = f"Required property \"observes\" not set for Sensor object \"{sensor.id}\""
-                raise(ValueError(message))
+                raise(ValueError(message))"""
             
             if isinstance(row[df_dict["Sensor"].columns.get_loc("isContainedIn")], str):
                 sensor.isContainedIn = self.component_base_dict[row[df_dict["Sensor"].columns.get_loc("isContainedIn")]]
@@ -2610,7 +2610,7 @@ class Model:
 
 
         for component, (modeled_match_nodes, (component_cls, sp, groups)) in self.instance_to_group_map.items():
-            # Get all required inputs for the component
+    # Get all required inputs for the component
             for key, (sp_node, source_keys) in sp.inputs.items():
                 match_node_list = [group[sp_node] for group in groups]  # CHANGED: Access single node directly
                 match_node_set = {group[sp_node] for group in groups}
@@ -2677,7 +2677,24 @@ class Model:
             systems.BuildingSpace1AdjBoundaryOutdoorFMUSystem.__name__: {"indoorTemperature": tps.Scalar(21),
                                                         "indoorCo2Concentration": tps.Scalar(500)},      
             systems.BuildingSpace11AdjBoundaryOutdoorFMUSystem.__name__: {"indoorTemperature": tps.Scalar(21),
-                                                        "indoorCo2Concentration": tps.Scalar(500)},                                                                                   
+                                                        "indoorCo2Concentration": tps.Scalar(500)},
+            systems.BuildingSpace2AdjBoundaryOutdoorFMUSystemTBoundary.__name__:{"indoorTemperature": tps.Scalar(21),
+                                                        "indoorCo2Concentration": tps.Scalar(500),
+                                                        "numberOfPeople": tps.Scalar(0),
+                                                        "peerBinary": tps.Scalar(0)},
+            systems.BuildingSpace1AdjBoundaryOutdoorFMUSystemTBoundary.__name__:{"indoorTemperature": tps.Scalar(21),
+                                                        "indoorCo2Concentration": tps.Scalar(500),
+                                                        "numberOfPeople": tps.Scalar(0),
+                                                        "peerBinary": tps.Scalar(0)},
+            systems.BuildingSpace11AdjBoundaryOutdoorFMUSystemTBoundary.__name__:{"indoorTemperature": tps.Scalar(21),
+                                                        "indoorCo2Concentration": tps.Scalar(500),
+                                                        "numberOfPeople": tps.Scalar(0),
+                                                        "peerBinary": tps.Scalar(0)},
+            systems.BuildingSpaceNoSH1AdjBoundaryOutdoorFMUSystemTboundary.__name__:{"indoorTemperature": tps.Scalar(21),
+                                                        "indoorCo2Concentration": tps.Scalar(500),
+                                                        "numberOfPeople": tps.Scalar(0),
+                                                        "peerBinary": tps.Scalar(0)},                                            
+            systems.TBoundarybuildingSpace.__name__: {"temperature": tps.Scalar(21)},                                                                            
             systems.PIControllerFMUSystem.__name__: {"inputSignal": tps.Scalar(0)},
             systems.PIDControllerSystem.__name__: {"inputSignal": tps.Scalar(0)},
             systems.RulebasedControllerSystem.__name__: {"inputSignal": tps.Scalar(0)},
@@ -2705,6 +2722,9 @@ class Model:
             systems.ReturnFlowJunctionSystem.__name__: {"airFlowRateOut": tps.Scalar(0),
                                                            "airTemperatureOut": tps.Scalar(21)},
             systems.SensorSystem.__name__: {"measuredValue": tps.Scalar(0)},
+            systems.SensorSystem.__name__: {"indoorTemperature": tps.Scalar(20), 
+                                            "measuredValue": tps.Scalar(0),
+                                            "T_boundary": tps.Scalar(20)},
             systems.ShadingDeviceSystem.__name__: {},
             systems.NeuralPolicyControllerSystem.__name__: {},
             systems.MeterSystem.__name__: {},

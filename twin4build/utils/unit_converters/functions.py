@@ -92,3 +92,16 @@ class integrate():
         self.v += self.conversion(self.obj[self.idx])*stepSize
         return self.v
     __call__ = call
+
+class threshold_get():
+    def __init__(self, obj, idx, conversion=do_nothing, threshold=0.5):
+        self.obj = obj
+        self.idx = idx
+        self.conversion = conversion
+        self.threshold = threshold
+
+    def call(self, x, stepSize=None):
+        value = self.conversion(self.obj[self.idx])
+        return 0 if value < self.threshold else 1
+
+    __call__ = call

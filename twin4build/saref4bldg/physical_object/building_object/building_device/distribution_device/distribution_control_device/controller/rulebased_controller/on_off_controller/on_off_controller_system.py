@@ -22,7 +22,6 @@ def get_signature_pattern():
     sp.add_modeled_node(node0)
     return sp
 
-
 class OnOffControllerSystem(base.RulebasedController):
     sp = [get_signature_pattern()]
     def __init__(self,
@@ -76,6 +75,3 @@ class OnOffControllerSystem(base.RulebasedController):
                 self.output["inputSignal"].set(self.onValue)
             else:
                 self.output["inputSignal"].set(self.offValue)
-
-
-        

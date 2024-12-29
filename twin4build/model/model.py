@@ -2734,7 +2734,7 @@ class Model:
             systems.TimeSeriesInputSystem.__name__: {},
             systems.OnOffSystem.__name__: {},
             systems.RulebasedHeatingDamperController.__name__: {"inputSignal": tps.Scalar(0)}, 
-            
+            systems.VentilationPeerController.__name__: {"inputSignal": tps.Scalar(0)}
         }
         initial_dict = {}
         for component in self.components.values():

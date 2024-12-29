@@ -94,7 +94,7 @@ class integrate():
     __call__ = call
 
 class threshold_get():
-    def __init__(self, obj, idx, conversion=do_nothing, threshold=0.5):
+    def __init__(self, obj, idx, conversion=do_nothing, threshold=0.001):
         self.obj = obj
         self.idx = idx
         self.conversion = conversion

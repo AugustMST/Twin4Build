@@ -116,7 +116,7 @@ class BuildingSpace1AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Buil
                 n_sh=None,
                 infiltration=0.005,
                 airVolume=None,
-                occupancyThreshold = 0.5
+                occupancyThreshold = 0.5,
                 **kwargs):
         """
         Initialize a BuildingSpace1AdjBoundaryOutdoorFMUSystem object.

@@ -171,6 +171,7 @@ class BuildingSpace2AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Buil
                 n_sh=None,
                 infiltration=None,
                 airVolume=None,
+                occupancyThreshold=0.5,
                 **kwargs):
         """
         Initialize a BuildingSpace1AdjBoundaryOutdoorFMUSystem object.
@@ -225,6 +226,7 @@ class BuildingSpace2AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Buil
         self.n_sh = n_sh#1.24
         self.infiltration = infiltration
         self.airVolume = airVolume
+        self.occupancyThreshold = occupancyThreshold
 
         self.start_time = 0
         # fmu_filename = "EPlusFan_0FMU.fmu"#EPlusFan_0FMU_0test2port
@@ -308,10 +310,10 @@ class BuildingSpace2AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Buil
                                   "indoorCo2Concentration": do_nothing,
                                   "spaceHeaterPower": change_sign,
                                   "spaceHeaterEnergy": integrate(self.output, "spaceHeaterPower", conversion=multiply_const(1/3600/1000)),
-                                  "peerBinary": threshold_get(self.input, "numberOfPeople")}
+                                  "peerBinary": threshold_get(self.input, "numberOfPeople", threshold=occupancyThreshold)}
 
         self.INITIALIZED = False
-        self._config = {"parameters": list(self.FMUparameterMap.keys()) + [ "infiltration"],}
+        self._config = {"parameters": list(self.FMUparameterMap.keys()) + [ "infiltration", "occupancyThreshold"],}
 
     @property
     def config(self):

@@ -48,33 +48,30 @@ def get_signature_pattern():
     node4 = Node(cls=(base.Property,), id="<Property\nn<SUB>5</SUB>>")
 
     node5 = Node(cls=(base.Schedule,), id="<Schedule\nn<SUB>6</SUB>>")
-    node6 = Node(cls=(base.Schedule,), id="<Schedule\nn<SUB>7</SUB>>")
     node7 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>8</SUB>>")
     node8 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>9</SUB>>")
     node9 = Node(cls=(base.Property,), id="<Property\nn<SUB>10</SUB>>")
     
-    sp = SignaturePattern(ownedBy="SequenceControllerSystem", priority=20)
+    sp = SignaturePattern(ownedBy="SequenceControllerSystem", priority=20000)
     sp.add_edge(Exact(object=node0, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node1, subject=node4, predicate="observes"))
     sp.add_edge(Exact(object=node0, subject=node3, predicate="controls"))
     sp.add_edge(Exact(object=node1, subject=node3, predicate="controls"))
     sp.add_edge(Exact(object=node0, subject=node5, predicate="hasProfile"))
-    sp.add_edge(Exact(object=node1, subject=node6, predicate="hasProfile"))
     sp.add_edge(Exact(object=node7, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node8, subject=node4, predicate="observes"))
     sp.add_edge(Exact(object=node0, subject=node9, predicate="controls"))
     sp.add_edge(Exact(object=node1, subject=node9, predicate="controls"))
 
     sp.add_input("actualValueSetpointController", node7, "measuredValue")
-    sp.add_input("actualValueRulebasedController", node8, "measuredValue")
+    sp.add_input("peerBinaryValue", node8, "measuredValue")
     sp.add_input("setpointValueSetpointController", node5, "scheduleValue")
-    sp.add_input("setpointValueRulebasedController", node6, "scheduleValue")
     sp.add_modeled_node(node0)
     sp.add_modeled_node(node1)
     return sp
 
 
-class SequenceControllerSystem(base.Controller):
+class SequencePeerControllerSystem(base.Controller):
     sp = [get_signature_pattern()]
     def __init__(self,
                 **kwargs):
@@ -83,14 +80,14 @@ class SequenceControllerSystem(base.Controller):
         base_setpoint_controller = [component for component in self.base_components if isinstance(component, base.SetpointController)][0]
         base_rulebased_controller = [component for component in self.base_components if isinstance(component, base.RulebasedController)][0]
         self.setpoint_controller = systems.PIControllerFMUSystem(**get_object_properties(base_setpoint_controller))
-        self.rulebased_controller = systems.OnOffControllerSystem(**get_object_properties(base_rulebased_controller))
+        self.rulebased_controller = systems.VentilationPeerController(**get_object_properties(base_rulebased_controller))
 #         id=f"setpoint_controller - {self.id}", 
 # id=f"rulebased_controller - {self.id}", 
 
         self.input = {"actualValueSetpointController": tps.Scalar(),
-                        "actualValueRulebasedController": tps.Scalar(),
                         "setpointValueSetpointController": tps.Scalar(),
-                        "setpointValueRulebasedController": tps.Scalar()}
+                        "peerBinaryValue": tps.Scalar()
+                        }
         self.output = {"inputSignal": tps.Scalar()}
         self._config = {"parameters": []}
 
@@ -135,9 +132,8 @@ class SequenceControllerSystem(base.Controller):
 
         self.setpoint_controller.input["actualValue"] = self.input["actualValueSetpointController"]
         self.setpoint_controller.input["setpointValue"] = self.input["setpointValueSetpointController"]
-        self.rulebased_controller.input["actualValue"] = self.input["actualValueRulebasedController"]
-        self.rulebased_controller.input["setpointValue"] = self.input["setpointValueRulebasedController"]
-
+        self.rulebased_controller.input["peerBinaryValue"] = self.input["peerBinaryValue"]
+        
         self.setpoint_controller.output = self.output.copy()
         self.setpoint_controller.initialize(startTime,
                                         endTime,
@@ -153,8 +149,7 @@ class SequenceControllerSystem(base.Controller):
         self.setpoint_controller.input["setpointValue"].set(self.input["setpointValueSetpointController"])
         self.setpoint_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
 
-        self.rulebased_controller.input["actualValue"].set(self.input["actualValueRulebasedController"])
-        self.rulebased_controller.input["setpointValue"].set(self.input["setpointValueRulebasedController"])
+        self.rulebased_controller.input["peerBinaryValue"].set(self.input["peerBinaryValue"])
         self.rulebased_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
 
         self.output["inputSignal"].set(max(next(iter(self.setpoint_controller.output.values())), next(iter(self.rulebased_controller.output.values()))))

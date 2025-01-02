@@ -12,6 +12,9 @@ def get_signature_pattern():
     node1 = Node(cls=(base.Sensor,), id="<PeerSensor\nn<SUB>2</SUB>>")
     node6 = Node(cls=(base.Peer), id="<PeerProperty\nn<SUB>7</SUB>>")
 
+    # node4 = Node(cls=(base.Sensor,), id="<SupplyDamperPositionSensor\nn<SUB>5</SUB>>")
+    # node8 = Node(cls=(base.OpeningPosition,), id="<SupplyDamperPositionProperty\nn<SUB>9</SUB>>")
+
     node2 = Node(cls=(base.BuildingSpace,), id="<BuildingSpace\nn<SUB>3</SUB>>")
 
     sp = SignaturePattern(ownedBy="PeerDamperController", priority=1000)
@@ -21,7 +24,11 @@ def get_signature_pattern():
     sp.add_edge(Exact(object=node0, subject=node2, predicate="isContainedIn"))
     sp.add_edge(Exact(object=node2, subject=node6, predicate="hasProperty"))
 
+    # sp.add_edge(Exact(object=node4, subject=node8, predicate="observes"))
+    # sp.add_edge(Exact(object=node0, subject=node8, predicate="observes"))
+
     sp.add_input("peerBinaryValue", node1, "measuredValue")
+    # sp.add_input("supplyDamperPosition", node4, "measuredValue")
 
     sp.add_modeled_node(node0)
     return sp
@@ -33,12 +40,14 @@ class VentilationPeerController(RulebasedController):
         super().__init__(**kwargs)
         # Define inputs and outputs
         self.input = {
-            "peerBinaryValue": tps.Scalar()
+            "peerBinaryValue": tps.Scalar(),
+            #"supplyDamperPosition": tps.Scalar()
         }
         self.onValue = 0.30
+        self.offValue = 0
         self.output = {"inputSignal": tps.Scalar()}
         self.isReverse = True
-        self._config = {"parameters": ["onValue"]}
+        self._config = {"parameters": ["onValue", "offValue"]}
 
     @property
     def config(self):
@@ -65,10 +74,12 @@ class VentilationPeerController(RulebasedController):
         """Apply control logic at each step."""
         # Retrieve inputs
         peerBinaryValue = self.input["peerBinaryValue"].get()
+        #supply_damper_position = self.input["supplyDamperPosition"].get()
 
         if (
             peerBinaryValue > 0
         ):
             self.output["inputSignal"].set(self.onValue)
         else:
-            self.output["inputSignal"].set(0)
+            # self.output["inputSignal"].set(supply_damper_position)
+            self.output["inputSignal"].set(self.offValue)

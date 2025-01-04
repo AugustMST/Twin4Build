@@ -15,35 +15,31 @@ import twin4build.utils.input_output_types as tps
 def get_signature_pattern():
     node0 = Node(cls=(base.SetpointController,), id="<Controller\nn<SUB>1</SUB>>")
     node1 = Node(cls=(base.RulebasedController,), id="<Controller\nn<SUB>2</SUB>>")
-    node2 = Node(cls=(base.Property,), id="<Property\nn<SUB>3</SUB>>")
+    node2 = Node(cls=(base.Temperature,), id="<Property\nn<SUB>3</SUB>>")
     node3 = Node(cls=(base.Property,), id="<Property\nn<SUB>4</SUB>>")
-    node4 = Node(cls=(base.Property,), id="<Property\nn<SUB>5</SUB>>")
+    node4 = Node(cls=(base.Peer,), id="<Property\nn<SUB>5</SUB>>")
 
-    node5 = Node(cls=(base.Schedule,), id="<Schedule\nn<SUB>6</SUB>>")
     node7 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>8</SUB>>")
     node8 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>9</SUB>>")
     node9 = Node(cls=(base.Property,), id="<Property\nn<SUB>10</SUB>>")
-    
-    sp = SignaturePattern(ownedBy="SequenceControllerSystem", priority=20000)
+
+
+    sp = SignaturePattern(ownedBy="SequenceControllerSystem", priority=30000)
     sp.add_edge(Exact(object=node0, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node1, subject=node4, predicate="observes"))
     sp.add_edge(Exact(object=node0, subject=node3, predicate="controls"))
     sp.add_edge(Exact(object=node1, subject=node3, predicate="controls"))
-    sp.add_edge(Exact(object=node0, subject=node5, predicate="hasProfile"))
     sp.add_edge(Exact(object=node7, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node8, subject=node4, predicate="observes"))
-    sp.add_edge(Exact(object=node0, subject=node9, predicate="controls"))
-    sp.add_edge(Exact(object=node1, subject=node9, predicate="controls"))
 
     sp.add_input("actualValueSetpointController", node7, "measuredValue")
     sp.add_input("peerBinaryValue", node8, "measuredValue")
-    sp.add_input("setpointValueSetpointController", node5, "scheduleValue")
     sp.add_modeled_node(node0)
     sp.add_modeled_node(node1)
     return sp
 
 
-class SequencePeerControllerSystem(base.Controller):
+class SequencePeerHeatingControllerSystem(base.Controller):
     sp = [get_signature_pattern()]
     def __init__(self,
                 **kwargs):
@@ -52,13 +48,13 @@ class SequencePeerControllerSystem(base.Controller):
         base_setpoint_controller = [component for component in self.base_components if isinstance(component, base.SetpointController)][0]
         base_rulebased_controller = [component for component in self.base_components if isinstance(component, base.RulebasedController)][0]
         self.setpoint_controller = systems.PIControllerFMUSystem(**get_object_properties(base_setpoint_controller))
-        self.rulebased_controller = systems.VentilationPeerController(**get_object_properties(base_rulebased_controller))
+        self.rulebased_controller = systems.HeatingSetpointPeerController(**get_object_properties(base_rulebased_controller))
 #         id=f"setpoint_controller - {self.id}", 
 # id=f"rulebased_controller - {self.id}", 
 
         self.input = {"actualValueSetpointController": tps.Scalar(),
-                        "setpointValueSetpointController": tps.Scalar(),
-                        "peerBinaryValue": tps.Scalar()
+                        "peerBinaryValue": tps.Scalar(),
+                        #"heatSetpointValue": tps.Scalar()
                         }
         self.output = {"inputSignal": tps.Scalar()}
         self._config = {"parameters": []}
@@ -103,7 +99,7 @@ class SequencePeerControllerSystem(base.Controller):
             rsetattr(self.rulebased_controller, attr, rgetattr(self, new_attr))
 
         self.setpoint_controller.input["actualValue"] = self.input["actualValueSetpointController"]
-        self.setpoint_controller.input["setpointValue"] = self.input["setpointValueSetpointController"]
+        #self.setpoint_controller.input["setpointValue"] = self.input["heatSetpointValue"]
         self.rulebased_controller.input["peerBinaryValue"] = self.input["peerBinaryValue"]
         
         self.setpoint_controller.output = self.output.copy()
@@ -117,13 +113,14 @@ class SequencePeerControllerSystem(base.Controller):
 
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
-        self.setpoint_controller.input["actualValue"].set(self.input["actualValueSetpointController"])
-        self.setpoint_controller.input["setpointValue"].set(self.input["setpointValueSetpointController"])
-        self.setpoint_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
 
         self.rulebased_controller.input["peerBinaryValue"].set(self.input["peerBinaryValue"])
         self.rulebased_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
 
-        self.output["inputSignal"].set(max(next(iter(self.setpoint_controller.output.values())), next(iter(self.rulebased_controller.output.values()))))
+        self.setpoint_controller.input["actualValue"].set(self.input["actualValueSetpointController"])
+        self.setpoint_controller.input["setpointValue"].set(next(iter(self.rulebased_controller.output.values())))
+        self.setpoint_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
+
+        self.output["inputSignal"].set(next(iter(self.setpoint_controller.output.values())))
 
         

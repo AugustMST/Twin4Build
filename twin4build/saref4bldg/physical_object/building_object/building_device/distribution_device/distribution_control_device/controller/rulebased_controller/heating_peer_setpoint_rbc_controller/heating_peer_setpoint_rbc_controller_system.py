@@ -8,34 +8,26 @@ from twin4build.base import RulebasedController
 
 def get_signature_pattern():
     node0 = Node(cls=(base.RulebasedController,),id="<Controller\nn<SUB>1</SUB>>")
-
     node1 = Node(cls=(base.Sensor,), id="<PeerSensor\nn<SUB>2</SUB>>")
-    node6 = Node(cls=(base.Peer), id="<PeerProperty\nn<SUB>7</SUB>>")
-    node3 = Node(cls=(base.OpeningPosition), id="<OpeningDamper\nn<SUB>7</SUB>>")
-    node4 = Node(cls=(base.OpeningPosition), id="<OpeningDamper\nn<SUB>7</SUB>>")
-
-    # node4 = Node(cls=(base.Sensor,), id="<SupplyDamperPositionSensor\nn<SUB>5</SUB>>")
-    # node8 = Node(cls=(base.OpeningPosition,), id="<SupplyDamperPositionProperty\nn<SUB>9</SUB>>")
-
     node2 = Node(cls=(base.BuildingSpace,), id="<BuildingSpace\nn<SUB>3</SUB>>")
+    node3 = Node(cls=(base.Peer), id="<PeerProperty\nn<SUB>4</SUB>>")
+    node4 = Node(cls=(base.OpeningPosition), id="<ValvePosition\nn<SUB>4</SUB>>")
 
-    sp = SignaturePattern(ownedBy="PeerDamperController", priority=1000)
+    sp = SignaturePattern(ownedBy="PeerHeatingSetpointController", priority=500)
 
-    sp.add_edge(Exact(object=node0, subject=node6, predicate="observes"))
-    sp.add_edge(Exact(object=node1, subject=node6, predicate="observes"))
+    sp.add_edge(Exact(object=node0, subject=node3, predicate="observes"))
+    sp.add_edge(Exact(object=node1, subject=node3, predicate="observes"))
     sp.add_edge(Exact(object=node0, subject=node2, predicate="isContainedIn"))
-    sp.add_edge(Exact(object=node2, subject=node6, predicate="hasProperty"))
-    sp.add_edge(Exact(object=node0, subject=node3, predicate="controls"))
+    sp.add_edge(Exact(object=node2, subject=node3, predicate="hasProperty"))
     sp.add_edge(Exact(object=node0, subject=node4, predicate="controls"))
 
     sp.add_input("peerBinaryValue", node1, "measuredValue")
-    # sp.add_input("supplyDamperPosition", node4, "measuredValue")
 
     sp.add_modeled_node(node0)
     return sp
 
 
-class VentilationPeerController(RulebasedController):
+class HeatingSetpointPeerController(RulebasedController):
     sp = [get_signature_pattern()]
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -44,11 +36,11 @@ class VentilationPeerController(RulebasedController):
             "peerBinaryValue": tps.Scalar(),
             #"supplyDamperPosition": tps.Scalar()
         }
-        self.onValue = 0.30
-        self.offValue = 0
+        self.onValue = 21
+        self.offValue = 24
         self.stepCounter = 0
         self.output = {"inputSignal": tps.Scalar()}
-        self.isReverse = True
+        self.isReverse = False
         self._config = {"parameters": ["onValue", "offValue"]}
 
     @property
@@ -85,7 +77,7 @@ class VentilationPeerController(RulebasedController):
     #     else:
     #         # self.output["inputSignal"].set(supply_damper_position)
     #         self.output["inputSignal"].set(self.offValue)
-    
+
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
 
         # Retrieve inputs

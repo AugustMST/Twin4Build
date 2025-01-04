@@ -22,9 +22,20 @@ def get_signature_pattern():
     sp.add_modeled_node(node0)
     return sp
 
+def get_signature_pattern_1():
+    node0 = Node(cls=(base.SetpointController,), id="<Controller\nn<SUB>1</SUB>>")
+    node1 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>2</SUB>>")
+    node2 = Node(cls=(base.Property,), id="<Property\nn<SUB>3</SUB>>")
+    sp = SignaturePattern(ownedBy="PIControllerFMUSystem")
+    sp.add_edge(Exact(object=node0, subject=node2, predicate="observes"))
+    sp.add_edge(Exact(object=node1, subject=node2, predicate="observes"))
+    sp.add_input("actualValue", node1, "measuredValue")
+    sp.add_modeled_node(node0)
+    return sp
+
 
 class PIControllerFMUSystem(FMUComponent, base.SetpointController):
-    sp = [get_signature_pattern()]
+    sp = [get_signature_pattern(), get_signature_pattern_1()]
     def __init__(self,
                  kp=None,
                  Ti=None,

@@ -284,6 +284,50 @@ class Monitor:
         for key in MSE:
             RMSE[key] = MSE[key]**(0.5)
         return RMSE
+    
+    def get_MAE(self):
+        """
+        Get the mean absolute error between actual and simulated readings.
+
+        Returns:
+            dict: A dictionary containing the mean absolute error for each key.
+        """
+        MAE = {}
+        for key in list(self.df_actual_readings.columns):  # Iterate through keys and skip "time"
+            if key != "time":
+                value = abs(self.df_actual_readings[key] - self.df_simulation_readings[key])  # Absolute difference
+                MAE[key] = value.mean()  # Calculate mean
+        return MAE
+    
+    def save_errors_to_csv(self, output_file="errors.csv"):
+        """
+        Calculate MSE, RMSE, and MAE, and save the results to a CSV file.
+
+        Args:
+            output_file (str): The name of the CSV file to save the results.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing MSE, RMSE, and MAE for each key.
+        """
+
+        # Get error metrics
+        mse = self.get_MSE()
+        rmse = self.get_RMSE()
+        mae = self.get_MAE()
+
+        # Combine results into a single DataFrame
+        errors = {
+            "Key": mse.keys(),
+            "MSE": mse.values(),
+            "RMSE": rmse.values(),
+            "MAE": mae.values(),
+        }
+        errors_df = pd.DataFrame(errors)
+
+        # Save to CSV
+        errors_df.to_csv(output_file, index=False)
+
+        return errors_df
 
     def monitor(self, 
                 startTime: datetime.datetime,

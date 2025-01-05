@@ -53,6 +53,7 @@ class SequencePeerControllerSystem(base.Controller):
         base_rulebased_controller = [component for component in self.base_components if isinstance(component, base.RulebasedController)][0]
         self.setpoint_controller = systems.PIControllerFMUSystem(**get_object_properties(base_setpoint_controller))
         self.rulebased_controller = systems.VentilationPeerController(**get_object_properties(base_rulebased_controller))
+        self.co2_setpoint = None
 #         id=f"setpoint_controller - {self.id}", 
 # id=f"rulebased_controller - {self.id}", 
 
@@ -61,7 +62,7 @@ class SequencePeerControllerSystem(base.Controller):
                         "peerBinaryValue": tps.Scalar()
                         }
         self.output = {"inputSignal": tps.Scalar()}
-        self._config = {"parameters": []}
+        self._config = {"parameters": ['co2_setpoint']}
 
         for attr in self.setpoint_controller.config["parameters"]:
             new_attr = f"{attr}__{self.setpoint_controller.id}"
@@ -72,7 +73,6 @@ class SequencePeerControllerSystem(base.Controller):
             new_attr = f"{attr}__{self.rulebased_controller.id}"
             rsetattr(self, new_attr, rgetattr(self.rulebased_controller, attr))
             self._config["parameters"].append(new_attr)
-        
 
     @property
     def config(self):
@@ -118,7 +118,10 @@ class SequencePeerControllerSystem(base.Controller):
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
         self.setpoint_controller.input["actualValue"].set(self.input["actualValueSetpointController"])
-        self.setpoint_controller.input["setpointValue"].set(self.input["setpointValueSetpointController"])
+        if self.co2_setpoint is not None:
+           self.setpoint_controller.input["setpointValue"].set(self.co2_setpoint) 
+        else:
+            self.setpoint_controller.input["setpointValue"].set(self.input["setpointValueSetpointController"])
         self.setpoint_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
 
         self.rulebased_controller.input["peerBinaryValue"].set(self.input["peerBinaryValue"])

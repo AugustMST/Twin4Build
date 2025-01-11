@@ -67,6 +67,7 @@ class BuildingSpace1AdjBoundaryFMUSystem(FMUComponent, base.BuildingSpace, base.
                 T_boundary=22,
                 infiltration=0.005,
                 airVolume=None,
+                occupantComfort = 22,
                 **kwargs):
         building_space.BuildingSpace.__init__(self, **kwargs)
 
@@ -89,8 +90,7 @@ class BuildingSpace1AdjBoundaryFMUSystem(FMUComponent, base.BuildingSpace, base.
         self.T_boundary = T_boundary
         self.infiltration = infiltration
         self.airVolume = airVolume
-
-
+        self.occupantComfort = occupantComfort
 
 
         self.start_time = 0

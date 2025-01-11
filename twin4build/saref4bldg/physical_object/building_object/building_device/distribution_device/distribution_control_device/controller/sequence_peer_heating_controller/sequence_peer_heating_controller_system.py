@@ -54,7 +54,7 @@ class SequencePeerHeatingControllerSystem(base.Controller):
 
         self.input = {"actualValueSetpointController": tps.Scalar(),
                         "peerBinaryValue": tps.Scalar(),
-                        #"heatSetpointValue": tps.Scalar()
+#                        "heatSetpointValue": tps.Scalar()
                         }
         self.output = {"inputSignal": tps.Scalar()}
         self._config = {"parameters": []}

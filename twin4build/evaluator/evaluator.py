@@ -1,6 +1,20 @@
+from asyncio import AbstractEventLoopPolicy
 import os
+from re import M
 import sys
 import datetime
+from xmlrpc.client import Boolean
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+from twin4build.saref.device.device import Device
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_flow_device.energy_conversion_device.coil.coil import Coil
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_flow_device.energy_conversion_device.coil.coil_heating_system import CoilHeatingSystem
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_flow_device.flow_moving_device.fan.fan import Fan
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_flow_device.flow_terminal.space_heater import space_heater_FMUmodel
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_flow_device.flow_terminal.space_heater.space_heater import SpaceHeater
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_flow_device.flow_terminal.space_heater.space_heater_system import SpaceHeaterSystem
 from twin4build.simulator.simulator import Simulator
 from twin4build.saref.device.sensor.sensor import Sensor
 from twin4build.saref.device.meter.meter import Meter
@@ -10,10 +24,12 @@ from twin4build.utils.plot.plot import get_fig_axes, load_params
 from twin4build.utils.plot.plot import bar_plot_line_format
 from twin4build.saref.property_.temperature.temperature import Temperature
 from twin4build.saref.property_.Co2.Co2 import Co2
+from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.opening_position.opening_position import OpeningPosition #This is in use
 from twin4build.saref.property_.energy.energy import Energy #This is in use
 from twin4build.model.model import Model
 from twin4build.saref4bldg.building_space.building_space import BuildingSpace
+from twin4build.evaluator.evaluator_kpi_functions import *
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -32,59 +48,82 @@ class Evaluator:
     def __init__(self):
         self.simulator = Simulator()
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_):
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_ = None, model = None, electricity_prices = None, absolute:Boolean =True):
         
         '''
-            The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
-            a measuring device, an evaluation metric, and a property to be evaluated. 
-            If the property is a Temperature, it calculates the discomfort of occupants based on the
-            difference between the temperature readings and the setpoint value over time. If the property is an Energy, 
-            it calculates the energy consumption over time. The KPI is then returned.
+        The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
+        a measuring device, an evaluation metric, and a property to be evaluated. 
+
+        Parameters:
+        - df_simulation_readings: DataFrame containing the kpi indexed by time.
+        - measuring_device: The name of the measuring device column in the DataFrame (the measuring device measuring property_).
+        - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage (eg: 'T', 'H', 'D')
+
+        Returns:
+        - DataFrame for the specified evaluation metric and kpi for the property_.
+
+        If property_ == Temperature:
+            It calculates the discomfort of occupants based on the
+            difference between the temperature readings and the setpoint value over time.
+
+        If property_ == CO2:
+            It calculates the discomfort of occupants based on the
+            difference between the temperature readings and the a fixed co2 value of 1000 ppm, but only if there is occupancy in the specific space.
+
+        If property_ == Energy:
+            It returns the energy consumption over time.
+
+        If property_ == Power:
+            It returns the power usage based on power readings.
         '''
-
-        if isinstance(property_, Temperature):
-            assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
-
-            # assert property_.isControlledBy is not None, f"Property belonging to measuring device \"{measuring_device}\" is not controlled and does not have a setpoint. Only properties that are controlled can be evaluated (currently)."
+        
+        if property_== None:
+            property_ = (model.component_dict[measuring_device].observes)[0]
             
-            controller = property_.isObservedBy[0] #We assume that there is only one controller for each property or that they have the same setpoint schedule
-            schedule = controller.hasProfile
-            # modeled_components = self.simulator.model.instance_map[self.components[controller.id]]
-            # base_controller = [v for v in modeled_components if isinstance(v, base.Controller)][0]
-            modeled_schedule = self.simulator.model.instance_map_reversed[schedule]
-            schedule_readings = modeled_schedule.savedOutput["scheduleValue"]
+        if isinstance(property_, Temperature):
+            #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
+            
+            kpi = Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model, absolute=absolute)
+
+        if isinstance(property_, Energy):
+            # Create a dataframe with time and energy readings
             filtered_df = pd.DataFrame()
             filtered_df.insert(0, "time", df_simulation_readings.index)
-            filtered_df.insert(1, "schedule_readings", schedule_readings)
-            filtered_df.set_index("time", inplace=True) #Important for inserting in next line
-            filtered_df.insert(1, measuring_device, df_simulation_readings[measuring_device])
-            dt = filtered_df.index.to_series().diff().apply(lambda x: x.total_seconds()/3600)
-            filtered_df["discomfort"] = (filtered_df["schedule_readings"]-filtered_df[measuring_device])*dt
-            filtered_df["discomfort"] = filtered_df.discomfort.mask(filtered_df["discomfort"]<0, 0)
-            filtered_df["discomfort"].clip(lower=0, inplace=True)
+            filtered_df.insert(1, "energy_readings", df_simulation_readings[measuring_device].values)
+            filtered_df.set_index("time", inplace=True)
 
-            
+            # Fill missing values with 0
+            filtered_df["energy_readings"] = filtered_df["energy_readings"].fillna(0)
 
-            # filtered_df.loc[filtered_df.between_time('17:00', '8:00').index] = 0 #Set times outside to 0
-            # filtered_df.loc[(filtered_df.index.weekday==5)|(filtered_df.index.weekday==6)] = 0 #Set times outside to 0
-
-            filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
-            if evaluation_metric=="T":
+            if evaluation_metric == "T":
+                # If evaluation_metric is "T" (total), take the last value after resampling
+                filtered_df = filtered_df.resample('1H').mean()  # Resample to hourly data
+                filtered_df["energy_readings"] = filtered_df["energy_readings"].iloc[-1]  # Take the last reading
+                # Set the index as "Total" for clarity
                 filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
             else:
-                # filtered_df = filtered_df.set_index('time').resample(f'1{evaluation_metric}')
-                filtered_df = filtered_df.resample(f'1{evaluation_metric}')
-                filtered_df = filtered_df.last() - filtered_df.first()
-            kpi = filtered_df["discomfort"]
+                # Otherwise, resample the data based on the evaluation_metric (e.g., hourly "H", daily "D")
+                filtered_df = filtered_df.resample(f'1{evaluation_metric}').mean()
 
-        elif isinstance(property_, Energy):
-            if evaluation_metric=="T":
-                print(df_simulation_readings)
-                filtered_df = df_simulation_readings.tail(n=1).set_index(pd.Index(["Total"]))
-            else:
-                filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
-                filtered_df = filtered_df.last() - filtered_df.first()
-            kpi = filtered_df[measuring_device]
+                # Calculate the difference in energy readings (diff) for the time period
+                filtered_df["energy_readings_diff"] = filtered_df["energy_readings"].diff().fillna(0)
+
+                # Optionally drop the cumulative column if only variations are needed
+                filtered_df = filtered_df[["energy_readings_diff"]]
+
+            # Return the KPI based on energy difference
+            kpi = filtered_df[["energy_readings_diff"]]
+
+        elif isinstance(property_, Co2):
+            #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
+            kpi = CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model)
+
+        elif isinstance(property_, Power):
+            #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
+            kpi = power_kpi_function(df_simulation_readings, measuring_device, evaluation_metric)
+
+            if electricity_prices is not None:
+                kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
 
         return kpi
 
@@ -100,6 +139,8 @@ class Evaluator:
                 include_measured=False,
                 measuring_device_name_map=None,
                 options=None,
+                modelTotalKpi = False,
+                absolute = True,
                 show=True):
         figsize = (15, 4)
         '''
@@ -116,7 +157,7 @@ class Evaluator:
 
         assert isinstance(models, list) and all([isinstance(model, Model) for model in models]), "Argument \"models\" must be a list of Model instances."
         # assert isinstance(measuring_devices, list) and all([isinstance(measuring_device, Sensor) or isinstance(measuring_device, Meter) for measuring_device in measuring_devices]), "Argument \"measuring_devices\" must be a list of Sensor or Meter instances."
-        assert isinstance(measuring_devices, list) and all([isinstance(measuring_device, str) for measuring_device in measuring_devices]) and all([measuring_device in model.components.keys() for (model, measuring_device) in zip(models, measuring_devices)]), f"Argument \"measuring_devices\" must be a list of strings with components that are included in all models."
+        # assert isinstance(measuring_devices, list) and all([isinstance(measuring_device, str) for measuring_device in measuring_devices]) and all([measuring_device in model.component_dict.keys() for (model, measuring_device) in zip(models, measuring_devices)]), f"Argument \"measuring_devices\" must be a list of strings with components that are included in all models."
         assert isinstance(evaluation_metrics, list) and all([isinstance(evaluation_metric, str) for evaluation_metric in evaluation_metrics]) and all([evaluation_metric in legal_evaluation_metrics for evaluation_metric in evaluation_metrics]), f"Argument \"evaluation_metrics\" must be a list of strings of either: {','.join(legal_evaluation_metrics)}."
         assert len(measuring_devices)==len(evaluation_metrics), "Length of measuring device must be equal to length of evaluation metrics."
         allowed_methods = ["simulate","bayesian_inference"]
@@ -127,11 +168,11 @@ class Evaluator:
         self.acc_plot_dict = {}
 
         if isinstance(startTime, datetime.datetime):
-            startTime = [startTime]
+            startTime = startTime
         if isinstance(endTime, datetime.datetime):
-            endTime = [endTime]
+            endTime = endTime
         if isinstance(stepSize, (int,float)):
-            stepSize = [stepSize]
+            stepSize = stepSize
 
 
         if include_measured:
@@ -151,6 +192,8 @@ class Evaluator:
     
             actual_readings = pd.DataFrame.from_dict(actual_readings_dict)
             actual_readings.set_index("time", inplace=True)
+        
+        
         kpi_dict = {measuring_device:pd.DataFrame() for measuring_device in measuring_devices}
         self.simulation_readings_dict = {measuring_device:pd.DataFrame() for measuring_device in measuring_devices}
 
@@ -161,7 +204,7 @@ class Evaluator:
                 if measuring_device not in measuring_device_name_map:
                     measuring_device_name_map[measuring_device] = measuring_device
 
-        if method=="simulate":
+        if method=="simulate" and modelTotalKpi == False:
             for model in models:
                 self.simulator.simulate(model,
                                     stepSize=stepSize,
@@ -169,8 +212,8 @@ class Evaluator:
                                     endTime=endTime)
                 df_simulation_readings = self.simulator.get_simulation_readings()
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
-                    property_ = model.components[measuring_device].observes
-                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_)
+                    property_ = (model.component_dict[measuring_device].observes)[0]
+                    kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, property_, model)
                     kpi_dict[measuring_device].insert(0, model.id, kpi)
                     if "time" not in kpi_dict[measuring_device]:
                         kpi_dict[measuring_device].insert(0, "time", kpi.index)
@@ -238,7 +281,7 @@ class Evaluator:
 
 
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
-                    property_ = model.components[measuring_device].observes
+                    property_ = (model.component_dict[measuring_device].observes)[0]
                     simulation_readings = [d for d in result["values"] if d["id"]==measuring_device][0][compare_with]
                     print("----")
                     print("measuring_device", measuring_device)
@@ -274,7 +317,7 @@ class Evaluator:
 
             if include_measured:
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
-                    property_ = model.components[measuring_device].observes
+                    property_ = model.component_dict[measuring_device].observes
                     kpi = self.get_kpi(actual_readings, measuring_device, evaluation_metric, property_) ####################
                     kpi_dict[measuring_device].insert(0, "Baseline measured", kpi.to_numpy())
                     l = err_dict[measuring_device][::-1]
@@ -286,7 +329,7 @@ class Evaluator:
                 kpi_dict[measuring_device].set_index("time", inplace=True)
             if single_plot:
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
-                    property_ = model.components[measuring_device].observes
+                    property_ = model.component_dict[measuring_device].observes
                     fig, ax = plt.subplots()
                     self.bar_plot_dict[measuring_device] = (fig,ax)
                     fig.set_size_inches(figsize)
@@ -320,7 +363,7 @@ class Evaluator:
                     if isinstance(property_, Temperature):
                         controller = property_.isObservedBy[0] #We assume that there is only one controller for each property or that they have the same setpoint schedule
                         schedule = controller.hasProfile
-                        # modeled_components = self.simulator.model.instance_map[self.components[controller.id]]
+                        # modeled_components = self.simulator.model.instance_map[self.component_dict[controller.id]]
                         # base_controller = [v for v in modeled_components if isinstance(v, base.Controller)][0]
                         modeled_schedule = self.simulator.model.instance_map_reversed[schedule]
                         schedule_readings = modeled_schedule.savedOutput["scheduleValue"]
@@ -367,8 +410,210 @@ class Evaluator:
                     fig.suptitle(measuring_device, fontsize=18)
                     self.simulation_readings_dict[measuring_device].plot(ax=ax, rot=0).legend(fontsize=8)
 
+        elif method=="optimize":
+                    for model in models:
+                        self.simulator.simulate(model,
+                                            stepSize=stepSize,
+                                            startTime=startTime,
+                                            endTime=endTime)
+                        df_simulation_readings = self.simulator.get_simulation_readings()
+
+                        for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
+                            property_ = model.component_dict[measuring_device].observes
+                            kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model)
+                            kpi_dict[measuring_device].insert(0, model.id, kpi)
+                            if "time" not in kpi_dict[measuring_device]:
+                                kpi_dict[measuring_device].insert(0, "time", kpi.index)
+
+        # Flag to switch between 'total' and 'time' plots
+          # Options: "total" or "time"
+
+        elif modelTotalKpi == True and method == "simulate":
+
+            df_simulation_readings_list = []
+
+            plot_mode = "comparison"
+
+            dataframe_result_dict = {}
+
+            for model in models:
+                property_types = ["Temperature_" + model.id, "Co2_" + model.id, "Energy_" + model.id, 
+                                "FanPower_" + model.id, "CoilPower_" + model.id]
+
+                dataframe_list = {prop_type: pd.DataFrame() for prop_type in property_types}
+
+                # Simulate the model
+                self.simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime)
+                df_simulation_readings = self.simulator.get_simulation_readings()
+                df_simulation_readings_list.append(df_simulation_readings)
+
+                # rows_to_drop = 114  # Adjust this number depending on the time frequency of the data (e.g., 24 for hourly data, 1440 for minute-based data)
+                # df_simulation_readings = df_simulation_readings.iloc[rows_to_drop:]
+
+                for measuring_device in measuring_devices:
+                    # Determine the property type
+                    property_ = (model.component_dict[measuring_device].observes)[0]
+
+                    if isinstance(property_, Temperature) and isinstance(property_.isPropertyOf, BuildingSpace):
+                        prop_type = "Temperature_" + model.id
+                    elif isinstance(property_, Co2) and isinstance(property_.isPropertyOf, BuildingSpace):
+                        prop_type = "Co2_" + model.id
+                    elif isinstance(property_, Energy) and isinstance(property_.isPropertyOf, SpaceHeater):
+                        prop_type = "Energy_" + model.id
+                    elif isinstance(property_, Power) and isinstance(property_.isPropertyOf, Fan):
+                        prop_type = "FanPower_" + model.id
+                    elif isinstance(property_, Power) and isinstance(property_.isPropertyOf, Coil):
+                        prop_type = "CoilPower_" + model.id
+                    else:
+                        continue  # Skip if property type is not recognized
+
+                    df = dataframe_list[prop_type]
+
+                    # Compute KPI and update the DataFrame
+                    for evaluation_metric in evaluation_metrics:
+
+                        kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model=model, property_=property_, absolute = absolute)
+                        
+                        if not pd.api.types.is_datetime64_any_dtype(kpi.index):
+                            df = df.reindex(kpi.index)
+
+                        df[measuring_device] = kpi.iloc[:, 0]
+                    
+                    if not df.empty:  # Ensure the DataFrame is not empty
+                        df["Total"] = df.sum(axis=1)
+
+                # Add the updated DataFrames to the result dictionary
+                dataframe_result_dict.update(dataframe_list)
+                
+            # At the end, convert the dictionary to a list if necessary
+            dataframe_names = list(dataframe_result_dict.keys())
+
+            if plot_mode == "comparison":
+                # Create a dictionary to store total values for each model and property type
+                comparison_dict = {prop_type: [] for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]}
+                models_ids = []
+
+                # Iterate over each model and property type to gather total values
+                for model in models:
+                    model_id = model.id
+                    models_ids.append(model_id)
+
+                    for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
+                        df_name = f"{prop_type}_{model_id}"
+                        if df_name in dataframe_result_dict:
+                            df = dataframe_result_dict[df_name]
+                            # Get the sum of the 'Total' column for the model and property type
+                            if "Total" in df.columns:
+                                total_value = df["Total"].sum()
+                            else:
+                                total_value = 0  # Default to 0 if the 'Total' column is not present
+                        else:
+                            total_value = 0  # Default to 0 if the DataFrame doesn't exist
+
+                        comparison_dict[prop_type].append(total_value)
+
+                # Convert to a DataFrame for easy plotting
+                comparison_df = pd.DataFrame(comparison_dict, index=models_ids)
+
+                # Create a figure with 5 subplots (one for each property)
+                fig, axes = plt.subplots(1, 5, figsize=(20, 6), sharey=False)
+
+                # Plot each property in a separate subplot
+                property_types = ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]
+                for i, prop_type in enumerate(property_types):
+                    comparison_df[prop_type].plot(kind="bar", ax=axes[i], color="skyblue")
+                    axes[i].set_title(f"{prop_type} Comparison")
+                    axes[i].set_xlabel("Model ID")
+                    axes[i].set_ylabel("Total Value")
+                    axes[i].set_xticklabels(models_ids, rotation=90)
+
+                # Adjust layout to avoid overlap
+                plt.tight_layout()
+                plt.show()
+            
+            plot_mode="stacked_contribution"
+
+            if plot_mode == "stacked_contribution":
+                weights = {
+                "Temperature": 0.50,
+                "Energy": 0.10,
+                "FanPower": 0.10,
+                "CoilPower": 0.10,
+                "Co2": 0.20
+            }
+
+                # Call the function with plot_mode "weighted_score" or "stacked_contribution"
+                plot_best_scenario(models, comparison_df, weights, plot_mode="stacked_contribution")
+                plot_best_scenario(models, comparison_df, weights, plot_mode="weighted_score")
+
+                subplot_across_properties(df_simulation_readings_list, models, measuring_devices)  
+
+                plot_mode = "time" 
+
+
+            if plot_mode == "total":
+                # Generate the summary DataFrame for total values
+                summary_dict = {prop_type: [] for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]}
+                models_ids = []
+
+                for model in models:
+                    model_id = model.id
+                    models_ids.append(model_id)
+
+                    for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
+                        df_name = f"{prop_type}_{model_id}"
+                        if df_name in dataframe_result_dict:
+                            df = dataframe_result_dict[df_name]
+                            # Calculate the sum of the 'Total' column
+                            if "Total" in df.columns:
+                                total_value = df["Total"].sum()
+                            else:
+                                total_value = 0  # Default to 0 if the column doesn't exist
+                        else:
+                            total_value = 0  # Default to 0 if the DataFrame doesn't exist
+                        
+                        summary_dict[prop_type].append(total_value)
+
+                # Convert to a DataFrame
+                summary_df = pd.DataFrame(summary_dict, index=models_ids)
+
+                # Plotting the data
+                for property_type in summary_df.columns:
+                    plt.figure(figsize=(8, 6))
+                    summary_df[property_type].plot(kind="bar", color="skyblue")
+                    plt.title(f"Comparison of Total Values Across Models: {property_type}")
+                    plt.xlabel("Model ID")
+                    plt.ylabel("Total Value")
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    plt.show()
+            
+
+            elif plot_mode == "time":
+                # Plot the data over time for each property
+                for property_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
+                    plt.figure(figsize=(10, 6))
+                    for model in models:
+                        df_name = f"{property_type}_{model.id}"
+                        if df_name in dataframe_result_dict:
+                            df = dataframe_result_dict[df_name]
+                            if not df.empty:
+                                df["Total"].plot(label=f"Model {model.id}")
+                    
+                    plt.title(f"Total Values Over Time: {property_type}")
+                    plt.xlabel("Time")
+                    plt.ylabel("Total Value")
+                    plt.legend(title="Models")
+                    plt.tight_layout()
+                    plt.show()
+
+
+    
+
         if show:
-            plt.show()    
+            plt.show()
 
-
+        if method == 'optimize':
+            return kpi_dict  
+        
 

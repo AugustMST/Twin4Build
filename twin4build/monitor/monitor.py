@@ -22,6 +22,8 @@ import matplotlib.dates as mdates
 import matplotlib.ticker as ticker
 from typing import Tuple, Optional, List
 import datetime
+import csv as csv_
+    
 
 
 class Monitor:
@@ -298,7 +300,7 @@ class Monitor:
                 value = abs(self.df_actual_readings[key] - self.df_simulation_readings[key])  # Absolute difference
                 MAE[key] = value.mean()  # Calculate mean
         return MAE
-    
+
     def save_errors_to_csv(self, output_file="errors.csv"):
         """
         Calculate MSE, RMSE, and MAE, and save the results to a CSV file.
@@ -326,6 +328,34 @@ class Monitor:
 
         # Save to CSV
         errors_df.to_csv(output_file, index=False)
+
+        # Categories to sort by
+        categories = ['temperature_sensor', 'co2_sensor', 'valve_position_sensor', 'damper_position_sensor']
+
+        # Read the input CSV data
+        rows = []
+        with open(output_file, 'r') as infile:
+            reader = csv_.DictReader(infile)
+            rows = list(reader)
+
+        # Sorting logic based on Key containing specific substrings
+        def sort_key(row):
+            key = row['Key'].lower()
+            for index, category in enumerate(categories):
+                if category in key:
+                    return (index, key)  # Sort by category index, then alphabetically within category
+            return (len(categories), key)  # Items not in the specified categories go to the end
+
+        sorted_rows = sorted(rows, key=sort_key)
+
+        # Write sorted rows to output CSV
+        with open(output_file, 'w', newline='') as outfile:
+            writer = csv_.DictWriter(outfile, fieldnames=rows[0].keys())
+            writer.writeheader()
+            writer.writerows(sorted_rows)
+
+        print(f"Sorted data has been written to {output_file}")
+
 
         return errors_df
 

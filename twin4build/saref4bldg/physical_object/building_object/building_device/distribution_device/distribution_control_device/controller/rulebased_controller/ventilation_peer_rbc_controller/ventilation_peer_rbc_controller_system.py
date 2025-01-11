@@ -93,7 +93,7 @@ class VentilationPeerController(RulebasedController):
 
         # Update step counter logic
         if peerBinaryValue > 0:
-            self.stepCounter = 2
+            self.stepCounter = 1
        
         elif self.stepCounter > 0:
             self.stepCounter -= 1 

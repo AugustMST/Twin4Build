@@ -129,7 +129,8 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Bui
                 n_sh=None,
                 infiltration=None,
                 airVolume=None,
-                occupancyThreshold=0.5,
+                occupancyThreshold=None,
+                occupantComfort = 23,
                 **kwargs):
         building_space.BuildingSpace.__init__(self, **kwargs)
 
@@ -157,6 +158,7 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Bui
         self.infiltration = infiltration
         self.airVolume = airVolume
         self.occupancyThreshold = occupancyThreshold
+        self.occupantComfort = occupantComfort
 
         self.start_time = 0
         # fmu_filename = "EPlusFan_0FMU.fmu"#EPlusFan_0FMU_0test2port
@@ -185,7 +187,8 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Bui
                     "indoorTemperature_adj11": tps.Scalar(),
                     "T_boundary": tps.Scalar(),
                     "m_infiltration": tps.Scalar(),
-                    "T_infiltration": tps.Scalar()}
+                    "T_infiltration": tps.Scalar(),
+                    "occupancyThreshold": tps.Scalar()}
         self.output = {"indoorTemperature": tps.Scalar(), 
                        "indoorCo2Concentration": tps.Scalar(), 
                        "spaceHeaterPower": tps.Scalar(),
@@ -261,12 +264,13 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Bui
                                     "indoorTemperature_adj11": to_degK_from_degC,
                                     "T_boundary": to_degK_from_degC,
                                     "m_infiltration": do_nothing,
+                                    "occupancyThreshold": do_nothing,
                                     "T_infiltration": get(self.output, "indoorTemperature", conversion=to_degK_from_degC)}
         self.output_conversion = {"indoorTemperature": to_degC_from_degK,
                                   "indoorCo2Concentration": do_nothing,
                                   "spaceHeaterPower": change_sign,
                                   "spaceHeaterEnergy": integrate(self.output, "spaceHeaterPower", conversion=multiply_const(1/3600/1000)),
-                                  "peerBinary": threshold_get(self.input, "numberOfPeople", threshold=occupancyThreshold)}
+                                  "peerBinary": threshold_get(self.input, "numberOfPeople", threshold="occupancyThreshold")}
 
         self.INITIALIZED = False
         self._config = {"parameters": list(self.FMUparameterMap.keys()) + ["infiltration", "occupancyThreshold"],}
@@ -302,6 +306,7 @@ class BuildingSpace11AdjBoundaryOutdoorFMUSystemTBoundary(FMUComponent, base.Bui
             self.INITIALIZED = True ###
         self.input["m_infiltration"] = tps.Scalar(self.infiltration)
         self.output_conversion["spaceHeaterEnergy"].v = 0
+        self.input["occupancyThreshold"] = tps.Scalar(self.occupancyThreshold)
 
         
 

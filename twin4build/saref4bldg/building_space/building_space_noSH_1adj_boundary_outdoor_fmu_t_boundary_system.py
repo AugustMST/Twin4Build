@@ -85,7 +85,7 @@ class BuildingSpaceNoSH1AdjBoundaryOutdoorFMUSystemTboundary(FMUComponent, base.
                 CO2_start=None,
                 infiltration=0.005,
                 airVolume=None,
-                occupancyThreshold = 0.5,
+                occupancyThreshold = None,
                 **kwargs):
         building_space.BuildingSpace.__init__(self, **kwargs)
 
@@ -126,7 +126,8 @@ class BuildingSpaceNoSH1AdjBoundaryOutdoorFMUSystemTboundary(FMUComponent, base.
                     "indoorTemperature_adj1": tps.Scalar(),
                     "T_boundary": tps.Scalar(),
                     "m_infiltration": tps.Scalar(),
-                    "T_infiltration": tps.Scalar()}
+                    "T_infiltration": tps.Scalar(),
+                    "occupancyThreshold": tps.Scalar()}
         self.output = {"indoorTemperature": tps.Scalar(), 
                        "indoorCo2Concentration": tps.Scalar(),
                        "peerBinary": tps.Scalar()}
@@ -170,10 +171,11 @@ class BuildingSpaceNoSH1AdjBoundaryOutdoorFMUSystemTboundary(FMUComponent, base.
                                     "indoorTemperature_adj1": to_degK_from_degC,
                                     "T_boundary": to_degK_from_degC,
                                     "m_infiltration": do_nothing,
-                                    "T_infiltration": get(self.output, "indoorTemperature", conversion=to_degK_from_degC)}
+                                    "T_infiltration": get(self.output, "indoorTemperature", conversion=to_degK_from_degC),
+                                    "occupancyThreshold": do_nothing}
         self.output_conversion = {"indoorTemperature": to_degC_from_degK, 
                                   "indoorCo2Concentration": do_nothing,
-                                  "peerBinary": threshold_get(self.input, "numberOfPeople", threshold=occupancyThreshold)}
+                                  "peerBinary": threshold_get(self.input, "numberOfPeople", threshold="occupancyThreshold")}
 
         self.INITIALIZED = False
         self._config = {"parameters": list(self.FMUparameterMap.keys()) + ["infiltration", "occupancyThreshold"]}
@@ -208,8 +210,7 @@ class BuildingSpaceNoSH1AdjBoundaryOutdoorFMUSystemTboundary(FMUComponent, base.
             self.initialize_fmu()
             self.INITIALIZED = True ###
         self.input["m_infiltration"] = tps.Scalar(self.infiltration)
-
-        
+        self.input["occupancyThreshold"] = tps.Scalar(self.occupancyThreshold)
 
 
         

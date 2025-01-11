@@ -105,6 +105,7 @@ class BuildingSpace1AdjBoundaryOutdoorFMUSystem(FMUComponent, base.BuildingSpace
                 infiltration=0.005,
                 airVolume=None,
                 occupancyThreshold = None,
+                occupantComfort = 22,
                 **kwargs):
         """
         Initialize a BuildingSpace1AdjBoundaryOutdoorFMUSystem object.
@@ -161,6 +162,7 @@ class BuildingSpace1AdjBoundaryOutdoorFMUSystem(FMUComponent, base.BuildingSpace
         self.infiltration = infiltration
         self.airVolume = airVolume
         self.occupancyThreshold = occupancyThreshold
+        self.occupantComfort = occupantComfort
 
         self.start_time = 0
         # fmu_filename = "EPlusFan_0FMU.fmu"#EPlusFan_0FMU_0test2port

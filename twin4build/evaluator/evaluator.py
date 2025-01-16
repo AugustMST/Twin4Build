@@ -97,22 +97,25 @@ class Evaluator:
 
             if evaluation_metric == "T":
                 # If evaluation_metric is "T" (total), take the last value after resampling
-                filtered_df = filtered_df.resample('1H').mean()  # Resample to hourly data
                 filtered_df["energy_readings"] = filtered_df["energy_readings"].iloc[-1]  # Take the last reading
                 # Set the index as "Total" for clarity
                 filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
             else:
                 # Otherwise, resample the data based on the evaluation_metric (e.g., hourly "H", daily "D")
-                filtered_df = filtered_df.resample(f'1{evaluation_metric}').mean()
+                filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
 
                 # Calculate the difference in energy readings (diff) for the time period
-                filtered_df["energy_readings_diff"] = filtered_df["energy_readings"].diff().fillna(0)
+                #filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0)
+                filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0).clip(lower=0)
 
+                
                 # Optionally drop the cumulative column if only variations are needed
-                filtered_df = filtered_df[["energy_readings_diff"]]
+                filtered_df = filtered_df[["energy_readings"]]
+                print(filtered_df.head())
 
             # Return the KPI based on energy difference
-            kpi = filtered_df[["energy_readings_diff"]]
+            kpi = filtered_df[["energy_readings"]]
+
 
         elif isinstance(property_, Co2):
             #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
@@ -445,11 +448,12 @@ class Evaluator:
                 # Simulate the model
                 self.simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime)
                 df_simulation_readings = self.simulator.get_simulation_readings()
+
+                rows_to_drop = 144  # Adjust this number depending on the time frequency of the data (e.g., 24 for hourly data, 1440 for minute-based data)
+                df_simulation_readings = df_simulation_readings.iloc[rows_to_drop:]
+
                 df_simulation_readings_list.append(df_simulation_readings)
-
-                # rows_to_drop = 114  # Adjust this number depending on the time frequency of the data (e.g., 24 for hourly data, 1440 for minute-based data)
-                # df_simulation_readings = df_simulation_readings.iloc[rows_to_drop:]
-
+                
                 for measuring_device in measuring_devices:
                     # Determine the property type
                     property_ = (model.component_dict[measuring_device].observes)[0]
@@ -479,8 +483,7 @@ class Evaluator:
 
                         df[measuring_device] = kpi.iloc[:, 0]
                     
-                    if not df.empty:  # Ensure the DataFrame is not empty
-                        df["Total"] = df.sum(axis=1)
+                    
 
                 # Add the updated DataFrames to the result dictionary
                 dataframe_result_dict.update(dataframe_list)
@@ -502,15 +505,25 @@ class Evaluator:
                         df_name = f"{prop_type}_{model_id}"
                         if df_name in dataframe_result_dict:
                             df = dataframe_result_dict[df_name]
+
+                            if not df.empty:  # Ensure the DataFrame is not empty
+                                df["Total"] = df.sum(axis=1)
+
                             # Get the sum of the 'Total' column for the model and property type
                             if "Total" in df.columns:
                                 total_value = df["Total"].sum()
+                                if prop_type == "FanPower" or prop_type == "CoilPower":
+                                    total_value = total_value/1000
                             else:
                                 total_value = 0  # Default to 0 if the 'Total' column is not present
                         else:
                             total_value = 0  # Default to 0 if the DataFrame doesn't exist
 
+                        df.to_csv(f"{str(df_name)}.csv")
+                        
                         comparison_dict[prop_type].append(total_value)
+
+                print(comparison_dict)
 
                 # Convert to a DataFrame for easy plotting
                 comparison_df = pd.DataFrame(comparison_dict, index=models_ids)
@@ -524,69 +537,78 @@ class Evaluator:
                     comparison_df[prop_type].plot(kind="bar", ax=axes[i], color="skyblue")
                     axes[i].set_title(f"{prop_type} Comparison")
                     axes[i].set_xlabel("Model ID")
-                    axes[i].set_ylabel("Total Value")
+                    if prop_type == "Temperature":
+                        axes[i].set_ylabel("Temperature Discomfort [Kh]")
+                    elif prop_type == "CO2":
+                        axes[i].set_ylabel("CO2 Discomfort [PPM]")
+                    elif prop_type == "Energy":
+                        axes[i].set_ylabel("Energy Consumption [kWh]")
+                    else:
+                        axes[i].set_ylabel("Power Consumption [kWh]")
+
                     axes[i].set_xticklabels(models_ids, rotation=90)
 
                 # Adjust layout to avoid overlap
                 plt.tight_layout()
                 plt.show()
             
-            plot_mode="stacked_contribution"
+            # plot_mode="stacked_contribution"
 
-            if plot_mode == "stacked_contribution":
-                weights = {
-                "Temperature": 0.50,
-                "Energy": 0.10,
-                "FanPower": 0.10,
-                "CoilPower": 0.10,
-                "Co2": 0.20
-            }
+            # if plot_mode == "stacked_contribution":
+            #     weights = {
+            #     "Temperature": 0.50,
+            #     "Energy": 0.10,
+            #     "FanPower": 0.10,
+            #     "CoilPower": 0.10,
+            #     "Co2": 0.20
+            # }
 
-                # Call the function with plot_mode "weighted_score" or "stacked_contribution"
-                plot_best_scenario(models, comparison_df, weights, plot_mode="stacked_contribution")
-                plot_best_scenario(models, comparison_df, weights, plot_mode="weighted_score")
+            #     # Call the function with plot_mode "weighted_score" or "stacked_contribution"
+            #     plot_best_scenario(models, comparison_df, weights, plot_mode="stacked_contribution")
+            #     plot_best_scenario(models, comparison_df, weights, plot_mode="weighted_score")
 
-                subplot_across_properties(df_simulation_readings_list, models, measuring_devices)  
+                subplot_across_properties_occupancy(df_simulation_readings_list, models, measuring_devices)  
 
                 plot_mode = "time" 
 
 
             if plot_mode == "total":
-                # Generate the summary DataFrame for total values
-                summary_dict = {prop_type: [] for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]}
-                models_ids = []
+                x = 0
+                # # Generate the summary DataFrame for total values
+                # summary_dict = {prop_type: [] for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]}
+                # models_ids = []
 
-                for model in models:
-                    model_id = model.id
-                    models_ids.append(model_id)
+                # for model in models:
+                #     model_id = model.id
+                #     models_ids.append(model_id)
 
-                    for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
-                        df_name = f"{prop_type}_{model_id}"
-                        if df_name in dataframe_result_dict:
-                            df = dataframe_result_dict[df_name]
-                            # Calculate the sum of the 'Total' column
-                            if "Total" in df.columns:
-                                total_value = df["Total"].sum()
-                            else:
-                                total_value = 0  # Default to 0 if the column doesn't exist
-                        else:
-                            total_value = 0  # Default to 0 if the DataFrame doesn't exist
+                #     for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
+                #         df_name = f"{prop_type}_{model_id}"
+                #         if df_name in dataframe_result_dict:
+                #             df = dataframe_result_dict[df_name]
+                #             # Calculate the sum of the 'Total' column
+                #             if "Total" in df.columns:
+                #                 total_value = df["Total"].sum()
+                #             else:
+                #                 total_value = 0  # Default to 0 if the column doesn't exist
+                #         else:
+                #             total_value = 0  # Default to 0 if the DataFrame doesn't exist
                         
-                        summary_dict[prop_type].append(total_value)
+                #         summary_dict[prop_type].append(total_value)
 
-                # Convert to a DataFrame
-                summary_df = pd.DataFrame(summary_dict, index=models_ids)
+                # # Convert to a DataFrame
+                # summary_df = pd.DataFrame(summary_dict, index=models_ids)
 
-                # Plotting the data
-                for property_type in summary_df.columns:
-                    plt.figure(figsize=(8, 6))
-                    summary_df[property_type].plot(kind="bar", color="skyblue")
-                    plt.title(f"Comparison of Total Values Across Models: {property_type}")
-                    plt.xlabel("Model ID")
-                    plt.ylabel("Total Value")
-                    plt.xticks(rotation=45)
-                    plt.tight_layout()
-                    plt.show()
+                # # Plotting the data
+                # for property_type in summary_df.columns:
+                #     plt.figure(figsize=(8, 6))
+                #     summary_df[property_type].plot(kind="bar", color="skyblue")
+                #     plt.title(f"Comparison of Total Values Across Models: {property_type}")
+                #     plt.xlabel("Model ID")
+                #     plt.ylabel("Total Value")
+                #     plt.xticks(rotation=45)
+                #     plt.tight_layout()
+                #     plt.show()
             
 
             elif plot_mode == "time":

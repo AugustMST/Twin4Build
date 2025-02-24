@@ -36,7 +36,6 @@ def power_kpi_function(df_simulation_readings, measuring_device, evaluation_metr
     filtered_df["power_readings"] = filtered_df["power_readings"].fillna(0)
 
     if evaluation_metric == "T":
-        filtered_df = filtered_df.resample(f'1{"H"}').sum()
         filtered_df["power_readings"] = filtered_df["power_readings"].cumsum()
         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
     else:
@@ -47,20 +46,20 @@ def power_kpi_function(df_simulation_readings, measuring_device, evaluation_metr
     return kpi
 
 def powerCost_kpi_function(kpi, electricity_prices, evaluation_metric):
-    if len(electricity_prices) != len(kpi):
-                        raise ValueError("Length of electricity prices does not match the number of time periods in power usage data.")
+    # if len(electricity_prices) != len(kpi):
+    #                     raise ValueError("Length of electricity prices does not match the number of time periods in power usage data.")
 
     # Calculate total cost for each period
     filtered_df = kpi
-    filtered_df['electricity_price'] = electricity_prices
+    filtered_df['electricity_price'] = electricity_prices[24:]
     filtered_df['cost'] = filtered_df['power_readings'] * filtered_df['electricity_price']
 
-    if evaluation_metric == "T":
-        filtered_df["cost"] = filtered_df["cost"].cumsum()
-        filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
-    else:
-        filtered_df = filtered_df.resample(f'1{evaluation_metric}')
-        kpi = filtered_df["cost"] 
+    # if evaluation_metric == "T":
+    #     filtered_df["cost"] = filtered_df["cost"].cumsum()
+    #     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+    # else:
+    #filtered_df = filtered_df.resample(f'1{evaluation_metric}')
+    kpi = filtered_df[["cost"]]
     
     return kpi
 
@@ -114,7 +113,6 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
     filtered_df["discomfort"] = filtered_df["discomfort"].mask(filtered_df["discomfort"] < 0, 0)
 
     if evaluation_metric == "T":
-        filtered_df = filtered_df.resample(f'1{"H"}').mean()
         filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
     else:
@@ -467,6 +465,11 @@ def subplot_across_properties(simulation_results_df: list, list_models: list, me
             # Display the plot
             plt.show()
 
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
+import numpy as np
+
 def subplot_across_properties_occupancy(simulation_results_df: list, list_models: list, measuring_devices: list):
     for model in list_models:
         Temperature_list = []
@@ -499,13 +502,13 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                 '007A_temperature_sensor': 21,
                 '011A_temperature_sensor': 22,
                 '012A_temperature_sensor': 22,
-                '013A_temperature_sensor': 21,
+                '013A_temperature_sensor': 20.5,
                 '015A_temperature_sensor': 22,
                 '020A_temperature_sensor': 20,
                 '020B_temperature_sensor': 20,
-                '029A_temperature_sensor': 23,
+                '029A_temperature_sensor': 22.5,
                 '031A_temperature_sensor': 21,
-                '033A_temperature_sensor': 23,
+                '033A_temperature_sensor': 22.5,
                 '035A_temperature_sensor': 21,
             }
 
@@ -516,8 +519,12 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
             n_columns = 2
             n_rows = (len(filtered_columns) + 1) // 2  # Calculate rows based on number of columns
 
-            # Create subplots with 2 columns and adjust the figure size
-            fig, axes = plt.subplots(n_rows, n_columns, figsize=(8, 3 * n_rows), sharex=True)
+            # Set A4 size dimensions (in inches)
+            fig_width = 8.27  # A4 width in inches
+            fig_height = 11.7  # A4 height in inches
+
+            # Create subplots with 2 columns and adjust the figure size to A4 dimensions
+            fig, axes = plt.subplots(n_rows, n_columns, figsize=(fig_width, fig_height), sharex=True)
 
             if n_rows == 1:
                 axes = [axes]
@@ -527,8 +534,20 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
             lines = []
             labels = []
 
+            new_column_names = ["Space_01 Temperature Sensor", "Space_03 Temperature Sensor" ,"Space_04 Temperature Sensor","Space_05 Temperature Sensor",
+                                "Space_06 Temperature Sensor","Space_07 Temperature Sensor","Space_08 Temperature Sensor","Space_09 Temperature Sensor",
+                                "Space_10 Temperature Sensor","Space_11 Temperature Sensor","Space_12 Temperature Sensor",]
+
+            subplot_labels = [f"({chr(97 + i)})" for i in range(len(filtered_columns))]  # Generates ['(a)', '(b)', '(c)', ...]
+
             for i, column in enumerate(filtered_columns):
                 ax = axes[i]
+
+                # Add subplot label in the top-left corner
+                ax.text(0.02, 0.95, subplot_labels[i], transform=ax.transAxes, fontsize=10, fontweight='bold', va='top')
+
+                # Set subplot title
+                ax.set_title(new_column_names[i], fontsize=9)
 
                 # Plot each dataframe's data for this column
                 for idx, df in enumerate(dataframes):
@@ -581,8 +600,9 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                         label='Occupied'
                     )
 
-                    ax.set_title(f'Column: {column}', fontsize=9)
-                    ax.set_ylabel('Value', fontsize=7)
+                    #ax.set_title(f'{column}', fontsize=9)
+                    ax.set_title(new_column_names[i], fontsize=9)
+                    ax.set_ylabel('Degree Celsius', fontsize=7)
                     ax.tick_params(axis='x', rotation=45)
 
                 # Add fixed value lines and bands
@@ -597,15 +617,35 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                         alpha=0.2
                     )
 
+                # Ensure temperature-related y-axis is between 18 and 25
+                if isinstance(model.component_dict[column].observes[0], Temperature):
+                    ax.set_ylim(19, 25)
+
             # Hide unused subplots
             for j in range(len(filtered_columns), len(axes)):
                 fig.delaxes(axes[j])
 
             # Add a single legend outside the plot
-            fig.legend(lines, labels, loc='lower center', fontsize=8, ncol=8)
+            # fig.legend(lines, labels, loc='lower center', fontsize=8, ncol=8)
+            # Define handles for custom legend items
+            red_stippled_line = mlines.Line2D([], [], color='red', linestyle='--', label='Minimum Temperature')
+            gray_shading = mpatches.Patch(color='gray', alpha=0.3, label='PIR Sensor Active')
+            red_shading = mpatches.Patch(color='red', alpha=0.2, label='Heating Deadband')
 
-            # Adjust layout
-            plt.tight_layout()
+            # Add custom legend items
+            fig.legend(
+                handles=lines + [red_stippled_line, gray_shading, red_shading],  # Include existing model lines + new items
+                labels=labels + ['Minimum Temperature', 'PIR Sensor Active', "Heating Deadband"],
+                loc='lower center',
+                fontsize=8,
+                ncol=4  # Adjust column count to fit
+)
+
+            # Adjust layout to ensure everything fits properly on the A4 page
+            plt.tight_layout(pad=2.0)  # Add some padding to ensure nothing is cut off
+
+            # Save the plot to a file (A4 size)
+            plt.savefig("temperature_subplot_A4.png", dpi=300, bbox_inches='tight')
             plt.show()
 
 

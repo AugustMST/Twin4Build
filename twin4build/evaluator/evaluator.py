@@ -48,7 +48,7 @@ class Evaluator:
     def __init__(self):
         self.simulator = Simulator()
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_ = None, model = None, electricity_prices = None, absolute:Boolean =True):
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_ = None, model = None, electricity_prices = None, absolute:Boolean =True, heating_prices = None):
         
         '''
         The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
@@ -85,37 +85,82 @@ class Evaluator:
             
             kpi = Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model, absolute=absolute)
 
-        if isinstance(property_, Energy):
-            # Create a dataframe with time and energy readings
-            filtered_df = pd.DataFrame()
-            filtered_df.insert(0, "time", df_simulation_readings.index)
-            filtered_df.insert(1, "energy_readings", df_simulation_readings[measuring_device].values)
-            filtered_df.set_index("time", inplace=True)
+        # if isinstance(property_, Energy):
+        #     # Create a dataframe with time and energy readings
+        #     filtered_df = pd.DataFrame()
+        #     filtered_df.insert(0, "time", df_simulation_readings.index)
+        #     filtered_df.insert(1, "energy_readings", df_simulation_readings[measuring_device].values)
+        #     filtered_df.set_index("time", inplace=True)
 
-            # Fill missing values with 0
-            filtered_df["energy_readings"] = filtered_df["energy_readings"].fillna(0)
+        #     # Fill missing values with 0
+        #     filtered_df["energy_readings"] = filtered_df["energy_readings"].fillna(0)
 
-            if evaluation_metric == "T":
-                # If evaluation_metric is "T" (total), take the last value after resampling
-                filtered_df["energy_readings"] = filtered_df["energy_readings"].iloc[-1]  # Take the last reading
-                # Set the index as "Total" for clarity
-                filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
-            else:
-                # Otherwise, resample the data based on the evaluation_metric (e.g., hourly "H", daily "D")
-                filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
+        #     if evaluation_metric == "T":
+        #         # If evaluation_metric is "T" (total), take the last value after resampling
+        #         filtered_df["energy_readings"] = filtered_df["energy_readings"].iloc[-1]  # Take the last reading
+        #         # Set the index as "Total" for clarity
+        #         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+        #     else:
+        #         # Otherwise, resample the data based on the evaluation_metric (e.g., hourly "H", daily "D")
+        #         filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
 
-                # Calculate the difference in energy readings (diff) for the time period
-                #filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0)
-                filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0).clip(lower=0)
+        #         # Calculate the difference in energy readings (diff) for the time period
+        #         #filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0)
+        #         filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0).clip(lower=0)
 
                 
-                # Optionally drop the cumulative column if only variations are needed
-                filtered_df = filtered_df[["energy_readings"]]
-                print(filtered_df.head())
+        #         # Optionally drop the cumulative column if only variations are needed
+        #         filtered_df = filtered_df[["energy_readings"]]
 
-            # Return the KPI based on energy difference
-            kpi = filtered_df[["energy_readings"]]
+        #         # Return the KPI based on energy difference
+        #         kpi = filtered_df[["energy_readings"]]
 
+        #         if heating_prices is not None:
+        #             # print(len(kpi))
+        #             # if len(heating_prices) != len(kpi):
+        #             #     raise ValueError("Length of heat prices does not match the number of time periods in energy usage data.")
+
+        #             # Calculate total cost for each period
+        #             filtered_df = kpi
+        #             filtered_df['heat_prices'] = heating_prices
+        #             filtered_df['cost'] = filtered_df['energy_readings'] * filtered_df['heat_prices']
+
+        #             if evaluation_metric == "T":
+        #                 filtered_df["cost"] = filtered_df["cost"].cumsum()
+        #                 filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+        #             else:
+        #                 filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
+        #                 kpi = filtered_df[["cost"]]
+
+        # Return the KPI based on energy difference
+                # kpi = filtered_df[["energy_readings"]]
+
+
+        elif isinstance(property_, Energy):
+            if evaluation_metric=="T":
+                filtered_df = df_simulation_readings.tail(n=1).set_index(pd.Index(["Total"]))
+                kpi = filtered_df[[measuring_device]]
+            else:
+                filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
+                filtered_df = filtered_df.last() - filtered_df.first()
+                kpi = filtered_df[[measuring_device]]
+
+            if heating_prices is not None:
+                # print(len(kpi))
+                # if len(heating_prices) != len(kpi):
+                #     raise ValueError("Length of heat prices does not match the number of time periods in energy usage data.")
+
+                # Calculate total cost for each period
+                filtered_df = kpi
+                filtered_df['heat_prices'] = heating_prices
+                filtered_df['cost'] = filtered_df[measuring_device] * filtered_df['heat_prices']
+
+                if evaluation_metric == "T":
+                    filtered_df["cost"] = filtered_df["cost"].cumsum()
+                    filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+                else:
+                    filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
+                    kpi = filtered_df[["cost"]]
 
         elif isinstance(property_, Co2):
             #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
@@ -125,8 +170,19 @@ class Evaluator:
             #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
             kpi = power_kpi_function(df_simulation_readings, measuring_device, evaluation_metric)
 
-            if electricity_prices is not None:
+            if electricity_prices is not None and isinstance(property_.isPropertyOf, Fan):
                 kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
+            elif heating_prices is not None and isinstance(property_.isPropertyOf, Coil):
+                filtered_df = kpi
+                filtered_df['heat_prices'] = heating_prices
+                filtered_df['cost'] = filtered_df["power_readings"] * filtered_df['heat_prices']
+
+                if evaluation_metric == "T":
+                    filtered_df["cost"] = filtered_df["cost"].cumsum()
+                    filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+                else:
+                    filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
+                    kpi = filtered_df[["cost"]]
 
         return kpi
 
@@ -144,6 +200,9 @@ class Evaluator:
                 options=None,
                 modelTotalKpi = False,
                 absolute = True,
+                electricity_prices = None,
+                heating_prices = None,
+                KPI = None,
                 show=True):
         figsize = (15, 4)
         '''
@@ -428,8 +487,6 @@ class Evaluator:
                             if "time" not in kpi_dict[measuring_device]:
                                 kpi_dict[measuring_device].insert(0, "time", kpi.index)
 
-        # Flag to switch between 'total' and 'time' plots
-          # Options: "total" or "time"
 
         elif modelTotalKpi == True and method == "simulate":
 
@@ -476,7 +533,7 @@ class Evaluator:
                     # Compute KPI and update the DataFrame
                     for evaluation_metric in evaluation_metrics:
 
-                        kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model=model, property_=property_, absolute = absolute)
+                        kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model=model, property_=property_, absolute = absolute, electricity_prices=electricity_prices, heating_prices = heating_prices)
                         
                         if not pd.api.types.is_datetime64_any_dtype(kpi.index):
                             df = df.reindex(kpi.index)
@@ -551,66 +608,11 @@ class Evaluator:
                 # Adjust layout to avoid overlap
                 plt.tight_layout()
                 plt.show()
-            
-            # plot_mode="stacked_contribution"
-
-            # if plot_mode == "stacked_contribution":
-            #     weights = {
-            #     "Temperature": 0.50,
-            #     "Energy": 0.10,
-            #     "FanPower": 0.10,
-            #     "CoilPower": 0.10,
-            #     "Co2": 0.20
-            # }
-
-            #     # Call the function with plot_mode "weighted_score" or "stacked_contribution"
-            #     plot_best_scenario(models, comparison_df, weights, plot_mode="stacked_contribution")
-            #     plot_best_scenario(models, comparison_df, weights, plot_mode="weighted_score")
 
                 subplot_across_properties_occupancy(df_simulation_readings_list, models, measuring_devices)  
 
-                plot_mode = "time" 
-
-
-            if plot_mode == "total":
-                x = 0
-                # # Generate the summary DataFrame for total values
-                # summary_dict = {prop_type: [] for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]}
-                # models_ids = []
-
-                # for model in models:
-                #     model_id = model.id
-                #     models_ids.append(model_id)
-
-                #     for prop_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
-                #         df_name = f"{prop_type}_{model_id}"
-                #         if df_name in dataframe_result_dict:
-                #             df = dataframe_result_dict[df_name]
-                #             # Calculate the sum of the 'Total' column
-                #             if "Total" in df.columns:
-                #                 total_value = df["Total"].sum()
-                #             else:
-                #                 total_value = 0  # Default to 0 if the column doesn't exist
-                #         else:
-                #             total_value = 0  # Default to 0 if the DataFrame doesn't exist
-                        
-                #         summary_dict[prop_type].append(total_value)
-
-                # # Convert to a DataFrame
-                # summary_df = pd.DataFrame(summary_dict, index=models_ids)
-
-                # # Plotting the data
-                # for property_type in summary_df.columns:
-                #     plt.figure(figsize=(8, 6))
-                #     summary_df[property_type].plot(kind="bar", color="skyblue")
-                #     plt.title(f"Comparison of Total Values Across Models: {property_type}")
-                #     plt.xlabel("Model ID")
-                #     plt.ylabel("Total Value")
-                #     plt.xticks(rotation=45)
-                #     plt.tight_layout()
-                #     plt.show()
+                plot_mode = "time"
             
-
             elif plot_mode == "time":
                 # Plot the data over time for each property
                 for property_type in ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]:
@@ -628,6 +630,20 @@ class Evaluator:
                     plt.legend(title="Models")
                     plt.tight_layout()
                     plt.show()
+
+        elif KPI is not None:
+            if KPI == "ThermalComfort":
+                keys = ['a', 'b', 'c']
+                resultsDict = dict.fromkeys(keys, None)  # Default value is None
+                
+                for model in models:
+                    # Simulate the model
+                    self.simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime) 
+                    df_simulation_readings = self.simulator.get_simulation_readings()
+
+
+
+        
 
 
     

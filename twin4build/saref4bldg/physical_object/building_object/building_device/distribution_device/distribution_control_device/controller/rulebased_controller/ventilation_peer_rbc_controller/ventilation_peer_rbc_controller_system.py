@@ -37,19 +37,26 @@ def get_signature_pattern():
 
 class VentilationPeerController(RulebasedController):
     sp = [get_signature_pattern()]
-    def __init__(self, **kwargs):
+    def __init__(self, 
+                 afterVentilation = False,
+                 nightNoDamper = False,
+                 onValue = 0.30,
+                 offValue = 0,
+                 **kwargs):
         super().__init__(**kwargs)
         # Define inputs and outputs
         self.input = {
             "peerBinaryValue": tps.Scalar(),
             #"supplyDamperPosition": tps.Scalar()
         }
-        self.onValue = 0.30
-        self.offValue = 0
+        self.onValue = onValue
+        self.offValue = offValue
+        self.nightNoDamper = nightNoDamper
         self.stepCounter = 0
+        self.afterVentilation = afterVentilation
         self.output = {"inputSignal": tps.Scalar()}
         self.isReverse = True
-        self._config = {"parameters": ["onValue", "offValue"]}
+        self._config = {"parameters": ["onValue", "offValue", "afterVentilation", "nightNoDamper"]}
 
     @property
     def config(self):
@@ -91,15 +98,40 @@ class VentilationPeerController(RulebasedController):
         # Retrieve inputs
         peerBinaryValue = self.input["peerBinaryValue"].get()
 
-        # Update step counter logic
-        if peerBinaryValue > 0:
-            self.stepCounter = 1
-       
-        elif self.stepCounter > 0:
-            self.stepCounter -= 1 
+        if dateTime is not None:
+            current_hour = dateTime.hour
+            if 6 <= current_hour < 19:
+                # Update step counter logic
+                if hasattr(self, 'afterVentilation') and self.afterVentilation:
+                    if peerBinaryValue > 0:
+                        self.stepCounter = 3
+                else:
+                    if peerBinaryValue > 0:
+                        self.stepCounter = 1
 
-        # Check if we are in the "on" state
-        if self.stepCounter > 0:
-            self.output["inputSignal"].set(self.onValue)
-        else:
-            self.output["inputSignal"].set(self.offValue)
+                # Check if we are in the "on" state
+                if self.stepCounter > 0:
+                    self.output["inputSignal"].set(self.onValue)
+                    self.stepCounter -= 1
+                else:
+                    self.output["inputSignal"].set(self.offValue)
+
+            else:
+                setpoint = 0
+                if hasattr(self, 'nightNoDamper') and self.nightNoDamper:
+                    self.output["inputSignal"].set(setpoint)
+                elif hasattr(self, 'afterVentilation') and self.afterVentilation:
+                    if peerBinaryValue > 0:
+                        self.stepCounter = 3
+                else:
+                    if peerBinaryValue > 0:
+                        self.stepCounter = 1
+
+                # Check if we are in the "on" state
+                if self.stepCounter > 0:
+                    setpoint = self.onValue
+                    self.stepCounter -= 1
+                else:
+                    setpoint = self.offValue
+
+                self.output["inputSignal"].set(setpoint)

@@ -36,12 +36,13 @@ class HeatingSetpointPeerController(RulebasedController):
             "peerBinaryValue": tps.Scalar(),
             #"supplyDamperPosition": tps.Scalar()
         }
-        self.onValue = 21
-        self.offValue = 24
+        self.onValue = 24
+        self.passiveValue = None
+        self.offValue = 21
         self.stepCounter = 0
         self.output = {"inputSignal": tps.Scalar()}
         self.isReverse = False
-        self._config = {"parameters": ["onValue", "offValue"]}
+        self._config = {"parameters": ["onValue", "passiveValue", "offValue"]}
 
     @property
     def config(self):
@@ -83,14 +84,30 @@ class HeatingSetpointPeerController(RulebasedController):
         # Retrieve inputs
         peerBinaryValue = self.input["peerBinaryValue"].get()
 
-        # Update step counter logic
+        # Check if we are within the 6:00 to 19:00 time range
+        if dateTime is not None:
+            current_hour = dateTime.hour
+            if 6 <= current_hour < 19:
+                if peerBinaryValue > 0:
+                    # Peer is present, use onValue
+                    self.output["inputSignal"].set(self.onValue)
+                else:
+                    # No peer, use the default setpoint
+                    try:
+                        if self.passiveValue == None:
+                            self.passiveValue = self.offValue
+                        self.output["inputSignal"].set(self.passiveValue)
+                    except Exception as e:
+                        self.output["inputSignal"].set(self.offValue)
+                return  # Exit the function after applying the time-specific logic
+
+        # If outside 6:00-19:00, or no valid dateTime is provided
         if peerBinaryValue > 0:
-            self.stepCounter = 2
-       
+            self.stepCounter = 1
         elif self.stepCounter > 0:
             self.stepCounter -= 1 
 
-        # Check if we are in the "on" state
+        # Check if we are in the "on" state or default to offValue
         if self.stepCounter > 0:
             self.output["inputSignal"].set(self.onValue)
         else:

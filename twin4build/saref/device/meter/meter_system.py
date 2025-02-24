@@ -45,6 +45,17 @@ def get_space_heater_energy_signature_pattern():
     sp.add_modeled_node(node0)
     return sp
 
+def get_space_heater_power_signature_pattern():
+    node0 = Node(cls=(base.Meter,))
+    node1 = Node(cls=(base.Power))
+    node2 = Node(cls=(base.SpaceHeater))
+    sp = SignaturePattern(ownedBy="MeterSystem")
+    sp.add_edge(Exact(object=node0, subject=node1, predicate="observes"))
+    sp.add_edge(Exact(object=node1, subject=node2, predicate="isPropertyOf"))
+    sp.add_input("measuredValue", node2, "spaceHeaterPower")
+    sp.add_modeled_node(node0)
+    return sp
+
 def get_heating_coil_power_signature_pattern():
     node0 = Node(cls=(base.Meter))
     node1 = Node(cls=(base.Power))
@@ -69,7 +80,7 @@ def get_cooling_coil_power_signature_pattern():
 
 class MeterSystem(Meter):
     sp = [get_signature_pattern(), get_fan_power_signature_pattern(), get_space_heater_energy_signature_pattern(), get_flow_supply_fan_signature_pattern(),
-          get_heating_coil_power_signature_pattern(), get_cooling_coil_power_signature_pattern()]
+          get_heating_coil_power_signature_pattern(), get_cooling_coil_power_signature_pattern(), get_space_heater_energy_signature_pattern(), get_space_heater_power_signature_pattern()]
 
     def __init__(self,
                  filename=None,

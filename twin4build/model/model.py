@@ -950,6 +950,14 @@ class Model:
             
             damper.isContainedIn = self.component_base_dict[row[df_dict["Damper"].columns.get_loc("isContainedIn")]]
             rsetattr(damper, "nominalAirFlowRate.hasValue", row[df_dict["Damper"].columns.get_loc("nominalAirFlowRate")])
+
+        # for row in df_dict["Schedule"].dropna(subset=["id"]).itertuples(index=False):
+        #     schedule_name = row[df_dict["Schedule"].columns.get_loc("id")]
+        #     schedule = self.component_base_dict[schedule_name]
+
+        #     if isinstance(row[df_dict["Schedule"].columns.get_loc("hasProperty")], str):
+        #         properties = [self.property_dict[property_name] for property_name in row[df_dict["Schedule"].columns.get_loc("hasProperty")].split(";")]
+        #         schedule.hasProperty.extend(properties)
             
         for row in df_dict["SpaceHeater"].dropna(subset=["id"]).itertuples(index=False):
             space_heater_name = row[df_dict["SpaceHeater"].columns.get_loc("id")]
@@ -1962,6 +1970,7 @@ class Model:
         meter_instances = self.get_component_by_class(self.component_base_dict, base.Meter)
         pump_instances = self.get_component_by_class(self.component_base_dict, base.Pump)
         flow_junction_instances = self.get_component_by_class(self.component_base_dict, base.FlowJunction)
+        schedule_instances = self.get_component_by_class(self.component_base_dict, base.Schedule)
 
         for space in space_instances:
             for property_ in space.hasProperty:
@@ -1973,6 +1982,10 @@ class Model:
                 self.update_attribute(component, "feedsFluidTo", space)
             for component in space.connectedTo:
                 self.update_attribute(component, "connectedTo", space)
+
+        # for schedule in schedule_instances:
+        #     for property_ in schedule.hasProperty:
+        #         self.update_attribute(property_, "isPropertyOf", schedule)
             
         for damper in damper_instances:
             self.update_attribute(damper, "isContainedIn.contains", damper)
@@ -2704,6 +2717,7 @@ class Model:
             systems.PIControllerFMUSystem.__name__: {"inputSignal": tps.Scalar(0)},
             systems.SequenceControllerSystem.__name__: {"inputSignal": tps.Scalar(0)}, 
             systems.SequencePeerControllerSystem.__name__: {"inputSignal": tps.Scalar(0)},
+            systems.SequencePeerControllerPPMSystem.__name__: {"inputSignal": tps.Scalar(0)},
             systems.SequencePeerHeatingControllerSystem.__name__: {"inputSignal": tps.Scalar(0)},
             systems.OnOffControllerSystem.__name__: {"inputSignal": tps.Scalar(0)},  
             systems.AirToAirHeatRecoverySystem.__name__: {"primaryTemperatureOut": tps.Scalar(21)},
@@ -2737,7 +2751,8 @@ class Model:
             systems.TimeSeriesInputSystem.__name__: {},
             systems.OnOffSystem.__name__: {},
             systems.RulebasedHeatingDamperController.__name__: {"inputSignal": tps.Scalar(0)}, 
-            systems.VentilationPeerController.__name__: {"inputSignal": tps.Scalar(0)}
+            systems.VentilationPeerController.__name__: {"inputSignal": tps.Scalar(0)},
+            systems.VentilationPeerControllerPPM.__name__: {"inputSignal": tps.Scalar(0)}
         }
         initial_dict = {}
         for component in self.components.values():

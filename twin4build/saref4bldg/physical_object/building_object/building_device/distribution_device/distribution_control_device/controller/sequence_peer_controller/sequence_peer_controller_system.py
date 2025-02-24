@@ -1,4 +1,5 @@
 import twin4build.base as base
+from twin4build.saref4bldg.physical_object.building_object.building_device.distribution_device.distribution_control_device.controller import rulebased_controller
 from twin4build.utils.fmu.fmu_component import FMUComponent, unzip_fmu
 from twin4build.utils.uppath import uppath
 import twin4build.systems as systems
@@ -122,6 +123,7 @@ class SequencePeerControllerSystem(base.Controller):
            self.setpoint_controller.input["setpointValue"].set(self.co2_setpoint) 
         else:
             self.setpoint_controller.input["setpointValue"].set(self.input["setpointValueSetpointController"])
+            
         self.setpoint_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
 
         self.rulebased_controller.input["peerBinaryValue"].set(self.input["peerBinaryValue"])

@@ -14,6 +14,18 @@ def get_signature_pattern():
     sp.add_modeled_node(node0)
     return sp
 
+# def get_signature_pattern_1():
+#     node0 = Node(cls=(base.Schedule,), id="<Schedule<SUB>1</SUB>>")
+#     node1 = Node(cls=(base.Temperature), id="<Schedule<SUB>1</SUB>>")
+#     node2 = Node(cls=(base.RulebasedController), id="<Schedule<SUB>1</SUB>>")
+
+#     sp = SignaturePattern(ownedBy="ScheduleSystemProperty", priority=10)
+#     sp.add_edge(Exact(object=node2, subject=node1, predicate="controls"))
+#     sp.add_edge(Exact(object=node1, subject=node0, predicate="isPropertyOf"))
+
+#     sp.add_input("inputSignal", node2, "inputSignal")
+#     sp.add_modeled_node(node0)
+
 class ScheduleSystem(base.Schedule, System):
     sp = [get_signature_pattern()]
     def __init__(self,

@@ -270,6 +270,8 @@ class Monitor:
         MSE = {}
         for key in list(self.df_actual_readings.columns): #iterate thorugh keys and skip first key which is "time"
             if key!="time":
+                self.df_actual_readings[key] = self.df_actual_readings[key].iloc[144:]
+                self.df_simulation_readings[key] = self.df_simulation_readings[key].iloc[144:]
                 value = ((self.df_actual_readings[key]-self.df_simulation_readings[key])**2)
                 MSE[key] = value.mean()
         return MSE
@@ -297,6 +299,8 @@ class Monitor:
         MAE = {}
         for key in list(self.df_actual_readings.columns):  # Iterate through keys and skip "time"
             if key != "time":
+                self.df_actual_readings[key] = self.df_actual_readings[key].iloc[144:]
+                self.df_simulation_readings[key] = self.df_simulation_readings[key].iloc[144:]
                 value = abs(self.df_actual_readings[key] - self.df_simulation_readings[key])  # Absolute difference
                 MAE[key] = value.mean()  # Calculate mean
         return MAE

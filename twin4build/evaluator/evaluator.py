@@ -29,7 +29,7 @@ from twin4build.saref.property_.opening_position.opening_position import Opening
 from twin4build.saref.property_.energy.energy import Energy #This is in use
 from twin4build.model.model import Model
 from twin4build.saref4bldg.building_space.building_space import BuildingSpace
-from twin4build.evaluator.evaluator_kpi_functions import *
+from twin4build.evaluator.evaluator_kpi_functions import CO2_kpi_function, Temp_kpi_function, power_kpi_function, powerCost_kpi_function
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -48,133 +48,93 @@ class Evaluator:
     def __init__(self):
         self.simulator = Simulator()
 
-    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_ = None, model = None, electricity_prices = None, absolute:Boolean =True, heating_prices = None):
-        
+    def get_kpi(self, df_simulation_readings, measuring_device, evaluation_metric, property_=None, model=None, electricity_prices=None, absolute=True, heating_prices=None, return_type="single"):
         '''
-        The get_kpi function calculates a Key Performance Indicator (KPI) based on simulation readings, 
+        Calculates a Key Performance Indicator (KPI) based on simulation readings, 
         a measuring device, an evaluation metric, and a property to be evaluated. 
 
         Parameters:
         - df_simulation_readings: DataFrame containing the kpi indexed by time.
         - measuring_device: The name of the measuring device column in the DataFrame (the measuring device measuring property_).
         - evaluation_metric: The evaluation metric describes the time interval to evaluate power usage (eg: 'T', 'H', 'D')
+        - property_: The property being evaluated (Temperature, CO2, Energy, Power).
+        - model: The simulation model being evaluated (required if property_ is None).
+        - electricity_prices: Optional time series of electricity prices (used for Power if the property belongs to a Fan).
+        - heating_prices: Optional time series of heating prices (used for Power if the property belongs to a Coil).
+        - absolute: Boolean flag indicating if absolute temperature discomfort should be computed.
+        - return_type: Controls the return format:
+            - "single" (default): Returns the primary KPI DataFrame for the property (backward compatible).
+            - "dict": Returns a dictionary containing all computed KPIs (useful if both energy and cost are calculated).
 
         Returns:
-        - DataFrame for the specified evaluation metric and kpi for the property_.
+        - If return_type="single": A DataFrame representing the primary KPI for the property.
+        - If return_type="dict": A dictionary where each entry corresponds to a different KPI (e.g., {'energy': df, 'cost': df}).
 
-        If property_ == Temperature:
-            It calculates the discomfort of occupants based on the
-            difference between the temperature readings and the setpoint value over time.
-
-        If property_ == CO2:
-            It calculates the discomfort of occupants based on the
-            difference between the temperature readings and the a fixed co2 value of 1000 ppm, but only if there is occupancy in the specific space.
-
-        If property_ == Energy:
-            It returns the energy consumption over time.
-
-        If property_ == Power:
-            It returns the power usage based on power readings.
+        The following KPIs are calculated depending on property type:
+        - Temperature: Occupant discomfort based on temperature deviation from setpoint.
+        - CO2: Occupant discomfort based on CO2 concentration exceeding 1000 ppm.
+        - Energy: Energy consumption over time.
+        - Power: Power usage over time.
+            - If electricity or heating prices are provided, an additional 'cost' KPI is computed.
         '''
-        
-        if property_== None:
-            property_ = (model.component_dict[measuring_device].observes)[0]
-            
+
+        if property_ is None:
+            property_ = model.component_dict[measuring_device].observes[0]
+
+        kpi_dict = {}
+
         if isinstance(property_, Temperature):
-            #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
-            
             kpi = Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model, absolute=absolute)
-
-        # if isinstance(property_, Energy):
-        #     # Create a dataframe with time and energy readings
-        #     filtered_df = pd.DataFrame()
-        #     filtered_df.insert(0, "time", df_simulation_readings.index)
-        #     filtered_df.insert(1, "energy_readings", df_simulation_readings[measuring_device].values)
-        #     filtered_df.set_index("time", inplace=True)
-
-        #     # Fill missing values with 0
-        #     filtered_df["energy_readings"] = filtered_df["energy_readings"].fillna(0)
-
-        #     if evaluation_metric == "T":
-        #         # If evaluation_metric is "T" (total), take the last value after resampling
-        #         filtered_df["energy_readings"] = filtered_df["energy_readings"].iloc[-1]  # Take the last reading
-        #         # Set the index as "Total" for clarity
-        #         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
-        #     else:
-        #         # Otherwise, resample the data based on the evaluation_metric (e.g., hourly "H", daily "D")
-        #         filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
-
-        #         # Calculate the difference in energy readings (diff) for the time period
-        #         #filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0)
-        #         filtered_df["energy_readings"] = filtered_df["energy_readings"].diff().fillna(0).clip(lower=0)
-
-                
-        #         # Optionally drop the cumulative column if only variations are needed
-        #         filtered_df = filtered_df[["energy_readings"]]
-
-        #         # Return the KPI based on energy difference
-        #         kpi = filtered_df[["energy_readings"]]
-
-        #         if heating_prices is not None:
-        #             # print(len(kpi))
-        #             # if len(heating_prices) != len(kpi):
-        #             #     raise ValueError("Length of heat prices does not match the number of time periods in energy usage data.")
-
-        #             # Calculate total cost for each period
-        #             filtered_df = kpi
-        #             filtered_df['heat_prices'] = heating_prices
-        #             filtered_df['cost'] = filtered_df['energy_readings'] * filtered_df['heat_prices']
-
-        #             if evaluation_metric == "T":
-        #                 filtered_df["cost"] = filtered_df["cost"].cumsum()
-        #                 filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
-        #             else:
-        #                 filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
-        #                 kpi = filtered_df[["cost"]]
-
-        # Return the KPI based on energy difference
-                # kpi = filtered_df[["energy_readings"]]
-
+            kpi_dict["temperature"] = kpi
 
         elif isinstance(property_, Energy):
-            if evaluation_metric=="T":
+            if evaluation_metric == "T":
                 filtered_df = df_simulation_readings.tail(n=1).set_index(pd.Index(["Total"]))
                 kpi = filtered_df[[measuring_device]]
             else:
                 filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
                 filtered_df = filtered_df.last() - filtered_df.first()
-                kpi = filtered_df[[measuring_device]]
+                kpi = filtered_df[[measuring_device]].rename(columns={measuring_device: "energy"})
+            kpi_dict["energy"] = kpi
 
             if heating_prices is not None:
-                # print(len(kpi))
-                # if len(heating_prices) != len(kpi):
-                #     raise ValueError("Length of heat prices does not match the number of time periods in energy usage data.")
-
-                # Calculate total cost for each period
-                filtered_df = kpi
-                filtered_df['heat_prices'] = heating_prices
+                filtered_df = df_simulation_readings
+                filtered_df['heat_prices'] = heating_prices*len(filtered_df[measuring_device])
                 filtered_df['cost'] = filtered_df[measuring_device] * filtered_df['heat_prices']
 
                 if evaluation_metric == "T":
+                    filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
                     filtered_df["cost"] = filtered_df["cost"].cumsum()
                     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 else:
                     filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
-                    kpi = filtered_df[["cost"]]
+
+                kpi_dict["cost"] = filtered_df[["cost"]]
 
         elif isinstance(property_, Co2):
-            #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
             kpi = CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model)
+            kpi_dict["co2"] = kpi
 
         elif isinstance(property_, Power):
-            #assert isinstance(property_.isPropertyOf, BuildingSpace), f"Measuring device \"{measuring_device}\" does not belong to a space. Only Temperature sensors belonging to a space can be evaluated (currently)."
             kpi = power_kpi_function(df_simulation_readings, measuring_device, evaluation_metric)
+            kpi_dict["power"] = kpi
 
             if electricity_prices is not None and isinstance(property_.isPropertyOf, Fan):
-                kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
+                kpi = power_kpi_function(df_simulation_readings, measuring_device, "H")
+                cost_kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
+
+                if evaluation_metric == "T":
+                    filtered_df = cost_kpi
+                    filtered_df["cost"] = filtered_df["cost"].cumsum()
+                    filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+                else:
+                    filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
+
+                kpi_dict["cost"] = filtered_df[["cost"]]
+
             elif heating_prices is not None and isinstance(property_.isPropertyOf, Coil):
                 filtered_df = kpi
-                filtered_df['heat_prices'] = heating_prices
+                filtered_df['heat_prices'] = heating_prices*len(filtered_df["power_readings"])
                 filtered_df['cost'] = filtered_df["power_readings"] * filtered_df['heat_prices']
 
                 if evaluation_metric == "T":
@@ -182,9 +142,26 @@ class Evaluator:
                     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 else:
                     filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
-                    kpi = filtered_df[["cost"]]
 
-        return kpi
+                kpi_dict["cost"] = filtered_df[["cost"]]
+
+        # Return logic
+        if return_type == "dict":
+            return kpi_dict
+        else:
+            # Return only the primary KPI for backward compatibility
+            if "energy" in kpi_dict:
+                return kpi_dict["energy"]
+            elif "power" in kpi_dict:
+                return kpi_dict["power"]
+            elif "temperature" in kpi_dict:
+                return kpi_dict["temperature"]
+            elif "co2" in kpi_dict:
+                return kpi_dict["co2"]
+            elif "cost" in kpi_dict:
+                return kpi_dict["cost"]  # For Power/Coil, cost is primary if heating_prices are used
+            else:
+                raise ValueError("No KPI computed for given property.")
 
     def evaluate(self,
                 startTime=None,
@@ -203,6 +180,7 @@ class Evaluator:
                 electricity_prices = None,
                 heating_prices = None,
                 KPI = None,
+                initialization_period = 0,
                 show=True):
         figsize = (15, 4)
         '''
@@ -222,7 +200,7 @@ class Evaluator:
         # assert isinstance(measuring_devices, list) and all([isinstance(measuring_device, str) for measuring_device in measuring_devices]) and all([measuring_device in model.component_dict.keys() for (model, measuring_device) in zip(models, measuring_devices)]), f"Argument \"measuring_devices\" must be a list of strings with components that are included in all models."
         assert isinstance(evaluation_metrics, list) and all([isinstance(evaluation_metric, str) for evaluation_metric in evaluation_metrics]) and all([evaluation_metric in legal_evaluation_metrics for evaluation_metric in evaluation_metrics]), f"Argument \"evaluation_metrics\" must be a list of strings of either: {','.join(legal_evaluation_metrics)}."
         assert len(measuring_devices)==len(evaluation_metrics), "Length of measuring device must be equal to length of evaluation metrics."
-        allowed_methods = ["simulate","bayesian_inference"]
+        allowed_methods = ["simulate","bayesian_inference", "optimize"]
         assert method in allowed_methods, f"The \"method\" argument must be one of the following: {', '.join(allowed_methods)} - \"{method}\" was provided."
         load_params()
         self.result_dict = {}
@@ -472,20 +450,50 @@ class Evaluator:
                     fig.suptitle(measuring_device, fontsize=18)
                     self.simulation_readings_dict[measuring_device].plot(ax=ax, rot=0).legend(fontsize=8)
 
-        elif method=="optimize":
-                    for model in models:
-                        self.simulator.simulate(model,
-                                            stepSize=stepSize,
-                                            startTime=startTime,
-                                            endTime=endTime)
-                        df_simulation_readings = self.simulator.get_simulation_readings()
+        elif method == "optimize":
+            property_kpi_sum = {}
 
-                        for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
-                            property_ = model.component_dict[measuring_device].observes
-                            kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model)
-                            kpi_dict[measuring_device].insert(0, model.id, kpi)
-                            if "time" not in kpi_dict[measuring_device]:
-                                kpi_dict[measuring_device].insert(0, "time", kpi.index)
+            for model in models:
+                self.simulator.simulate(model,
+                                        stepSize=stepSize,
+                                        startTime=startTime,
+                                        endTime=endTime)
+                df_simulation_readings = self.simulator.get_simulation_readings()
+                df_simulation_readings = df_simulation_readings.iloc[initialization_period:]
+
+                for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
+                    property_ = model.component_dict[measuring_device].observes[0]
+                    property_type = type(property_)
+
+                    kpi_dict = self.get_kpi(df_simulation_readings=df_simulation_readings,
+                                            measuring_device=measuring_device,
+                                            evaluation_metric=evaluation_metric,
+                                            model=model,
+                                            electricity_prices=electricity_prices,
+                                            heating_prices=heating_prices,
+                                            return_type="dict")
+
+                    # Convert Power KPI to kW if needed
+                    if property_type is Power and "power" in kpi_dict:
+                        kpi_dict["power"] = kpi_dict["power"] / 1000
+
+                    if property_type is Power and "cost" in kpi_dict:
+                        kpi_dict["cost"] = kpi_dict["cost"] / 1000
+
+                    if property_type is Energy and "cost" in kpi_dict:
+                        kpi_dict["cost"] = kpi_dict["cost"] / 1000
+
+                    # For each available KPI (energy, cost, etc.), update the sums
+                    for kpi_name, kpi_df in kpi_dict.items():
+                        kpi_value = kpi_df.values[0, 0]
+
+                        # Use (property_type, kpi_name) tuple as the key to distinguish e.g., (Power, 'power') vs (Power, 'cost')
+                        key = (property_type, kpi_name)
+
+                        if key not in property_kpi_sum:
+                            property_kpi_sum[key] = kpi_value
+                        else:
+                            property_kpi_sum[key] += kpi_value
 
 
         elif modelTotalKpi == True and method == "simulate":
@@ -576,7 +584,7 @@ class Evaluator:
                         else:
                             total_value = 0  # Default to 0 if the DataFrame doesn't exist
 
-                        df.to_csv(f"{str(df_name)}.csv")
+                        #df.to_csv(f"{str(df_name)}.csv")
                         
                         comparison_dict[prop_type].append(total_value)
 
@@ -641,17 +649,10 @@ class Evaluator:
                     self.simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime) 
                     df_simulation_readings = self.simulator.get_simulation_readings()
 
-
-
-        
-
-
-    
-
         if show:
             plt.show()
 
         if method == 'optimize':
-            return kpi_dict  
+            return property_kpi_sum  
         
 

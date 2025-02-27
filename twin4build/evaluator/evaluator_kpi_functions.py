@@ -36,6 +36,7 @@ def power_kpi_function(df_simulation_readings, measuring_device, evaluation_metr
     filtered_df["power_readings"] = filtered_df["power_readings"].fillna(0)
 
     if evaluation_metric == "T":
+        filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
         filtered_df["power_readings"] = filtered_df["power_readings"].cumsum()
         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
     else:
@@ -49,9 +50,16 @@ def powerCost_kpi_function(kpi, electricity_prices, evaluation_metric):
     # if len(electricity_prices) != len(kpi):
     #                     raise ValueError("Length of electricity prices does not match the number of time periods in power usage data.")
 
-    # Calculate total cost for each period
+    # # Calculate total cost for each period
     filtered_df = kpi
-    filtered_df['electricity_price'] = electricity_prices[24:]
+    # filtered_df['electricity_price'] = electricity_prices[24:]
+    # filtered_df['cost'] = filtered_df['power_readings'] * filtered_df['electricity_price']
+
+    # Slice the last 24 prices (or however many rows kpi has)
+    n = len(filtered_df)
+    filtered_df['electricity_price'] = electricity_prices[-n:]
+
+    # Now calculate cost
     filtered_df['cost'] = filtered_df['power_readings'] * filtered_df['electricity_price']
 
     # if evaluation_metric == "T":
@@ -113,6 +121,7 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
     filtered_df["discomfort"] = filtered_df["discomfort"].mask(filtered_df["discomfort"] < 0, 0)
 
     if evaluation_metric == "T":
+        filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
         filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
     else:
@@ -134,7 +143,7 @@ def get_Energy(df_simulation_readings, measuring_device, evaluation_metric, mode
 
     if evaluation_metric == "T":
         # If evaluation_metric is "T" (total), take the last value after resampling
-        filtered_df = filtered_df.resample('1H').mean()  # Resample to hourly data
+        filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
         filtered_df["energy_readings"] = filtered_df["energy_readings"].iloc[-1]  # Take the last reading
         # Set the index as "Total" for clarity
         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
@@ -215,7 +224,6 @@ def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metri
 
     # Resample and aggregate discomfort
     if evaluation_metric == "T":
-        filtered_df = filtered_df.resample(f'1{"H"}').mean()
         filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
     else:

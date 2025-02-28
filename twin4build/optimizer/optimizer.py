@@ -1,3 +1,4 @@
+from tkinter import N
 from types import NoneType
 
 import pygad
@@ -22,7 +23,7 @@ class Optimizer:
         self.initialization_time = None
         self.counter = 0
 
-    def fitness_function_wrapper(self, model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices: list = [], weights: list = [], tchebycheff_z_star: list = [], electricity_price=None):
+    def fitness_function_wrapper(self, model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices: list = [], weights: list = [], tchebycheff_z_star: list = [], electricity_price=None, heating_price = None):
         time_difference = endTime - startTime
         total_seconds = time_difference.total_seconds()
         num_timesteps = int(total_seconds // stepSize)
@@ -103,7 +104,7 @@ class Optimizer:
                num_generations=15, population_size=3, crossover_rate=0.5, mutation_rate=0.30, setpoint_ranges: list = [], electricity_price=None):
 
         fitness_function = self.fitness_function_wrapper(
-            model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices, weights, tchebycheff_z_star, electricity_price=electricity_price
+            model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices, weights, tchebycheff_z_star, electricity_price=electricity_price, 
         )
 
         time_difference = endTime - startTime

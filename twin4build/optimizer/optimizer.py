@@ -1,19 +1,17 @@
-from tkinter import N
-from types import NoneType
-
 import pygad
-import twin4build.base as base
-from datetime import timedelta
-from fmpy.fmi2 import FMICallException
 import pandas as pd
 from datetime import datetime
-
-from twin4build.saref import property_
+from fmpy.fmi2 import FMICallException
 from twin4build.saref.property_.energy.energy import Energy
 from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.temperature.temperature import Temperature
 from twin4build.saref.property_.Co2.Co2 import Co2
+from twin4build.utils.rsetattr import rsetattr
 
+def frange(start, stop, step):
+        while start <= stop:
+            yield start
+            start += step
 
 class Optimizer:
     def __init__(self, model=None):
@@ -21,37 +19,22 @@ class Optimizer:
         self.best_individuals_per_generation = []
         self.fitness_per_generation = []
         self.initialization_time = None
-        self.counter = 0
 
-    def fitness_function_wrapper(self, model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices: list = [], weights: list = [], tchebycheff_z_star: list = [], electricity_price=None, heating_price = None):
-        time_difference = endTime - startTime
-        total_seconds = time_difference.total_seconds()
-        num_timesteps = int(total_seconds // stepSize)
-        n_schedules = len(schedules)
-
-        week_day_ruleset = {
-            "ruleset_start_minute": [0],
-            "ruleset_end_minute": [0],
-            "ruleset_start_hour": [0],
-            "ruleset_end_hour": [0],
-            "ruleset_value": [0]
-        }
-
-        for i in range(len(schedules)):
-            model.component_dict[schedules[i]].useFile = False
-            model.component_dict[schedules[i]].weekDayRulesetDict = week_day_ruleset
-
+    def fitness_function_wrapper(self, model, evaluator, startTime, endTime, stepSize, 
+                                 controllers, setpoints_per_controller, 
+                                 measuring_devices, weights, tchebycheff_z_star, electricty_prices, heating_prices):
+        """
+        Wrapper to generate the actual fitness function for GA.
+        Each gene corresponds to one static setpoint value.
+        """
         def fitness_function(ga_instance, solution, solution_idx):
-            solution_matrix = solution.reshape((n_schedules, num_timesteps))
-
-            for i, schedule_name in enumerate(schedules):
-                setpoint_schedule = model.component_dict[schedule_name]
-                setpoint_schedule.weekDayRulesetDict["ruleset_default_value"] = 0
-                setpoint_schedule.weekDayRulesetDict["ruleset_start_minute"] = [0] * num_timesteps
-                setpoint_schedule.weekDayRulesetDict["ruleset_end_minute"] = [0] * num_timesteps
-                setpoint_schedule.weekDayRulesetDict["ruleset_start_hour"] = list(range(0, num_timesteps))
-                setpoint_schedule.weekDayRulesetDict["ruleset_end_hour"] = list(range(1, num_timesteps)) + [0]
-                setpoint_schedule.weekDayRulesetDict["ruleset_value"] = solution_matrix[i]
+            gene_index = 0
+            for ctrl_idx, controller_name in enumerate(controllers):
+                controller = model.component_dict[controller_name]
+                for setpoint_name in setpoints_per_controller[ctrl_idx]:
+                    value = solution[gene_index]
+                    rsetattr(controller, setpoint_name, value)
+                    gene_index += 1
 
             try:
                 results_dict = evaluator.evaluate(
@@ -68,8 +51,8 @@ class Optimizer:
                     options=None,
                     modelTotalKpi=False,
                     absolute=True,
-                    electricity_prices=None,
-                    heating_prices=None,
+                    electricity_prices=electricty_prices,
+                    heating_prices=heating_prices,
                     KPI=None,
                     show=True
                 )
@@ -100,35 +83,56 @@ class Optimizer:
 
         return fitness_function
 
-    def run_ga(self, model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices: list, weights: list, tchebycheff_z_star: list,
-               num_generations=15, population_size=3, crossover_rate=0.5, mutation_rate=0.30, setpoint_ranges: list = [], electricity_price=None):
+    def run_ga(self, model, evaluator, stepSize, startTime, endTime, 
+           controllers, setpoints_per_controller, 
+           measuring_devices, weights, tchebycheff_z_star,
+           num_generations=15, population_size=3, 
+           crossover_rate=0.5, mutation_rate=0.3, 
+           setpoint_ranges=None, setpoint_interval=None, electricty_prices = None, heating_prices = None):
+    
+        if setpoint_ranges is None:
+            raise ValueError("setpoint_ranges must be provided as a flat list of [min, max] pairs.")
+        
+        if setpoint_interval is None:
+            setpoint_interval = [0.5] * len(controllers)  # Assuming 0.5 interval for all controllers
 
+        # Fitness function wrapper
         fitness_function = self.fitness_function_wrapper(
-            model, evaluator, stepSize, startTime, endTime, schedules, measuring_devices, weights, tchebycheff_z_star, electricity_price=electricity_price, 
+            model, evaluator, startTime, endTime, stepSize,
+            controllers, setpoints_per_controller, 
+            measuring_devices, weights, tchebycheff_z_star,
+            electricty_prices, heating_prices
         )
 
-        time_difference = endTime - startTime
-        total_seconds = time_difference.total_seconds()
-        num_timesteps = int(total_seconds // stepSize)
-        n_schedules = len(schedules)
-
-        total_genes = num_timesteps * n_schedules
-
         gene_space = []
-        for schedule_range in setpoint_ranges:
-            gene_space.extend([{'low': schedule_range[0], 'high': schedule_range[1]}] * num_timesteps)
 
-        if len(setpoint_ranges) == 1:
-            gene_space *= n_schedules
+        # Process each controller and its setpoints
+        for controller_index, setpoints in enumerate(setpoints_per_controller):
+            for setpoint_index, setpoint_name in enumerate(setpoints):
+                # Get the min and max values from the provided ranges
+                min_val, max_val = setpoint_ranges[controller_index][setpoint_index]
+                interval = setpoint_interval[controller_index]
+                
+                # Create possible values with the interval
+                possible_values = [round(x, 1) for x in frange(min_val, max_val, interval)]
 
-        assert len(gene_space) == total_genes, f"gene_space length ({len(gene_space)}) does not match num_genes ({total_genes})"
+                gene_space.append(possible_values)
 
+        num_genes = len(gene_space)
+
+        # Validation to ensure the number of genes matches the number of setpoints
+        assert num_genes == sum(len(sp) for sp in setpoints_per_controller), \
+            f"Mismatch: {num_genes} genes provided but {sum(len(sp) for sp in setpoints_per_controller)} setpoints found."
+
+        self.initialization_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+        # Set up and run the genetic algorithm
         ga_instance = pygad.GA(
             num_generations=num_generations,
             num_parents_mating=int(crossover_rate * population_size),
             fitness_func=fitness_function,
             sol_per_pop=population_size,
-            num_genes=total_genes,
+            num_genes=num_genes,
             mutation_percent_genes=int(mutation_rate * 100),
             gene_space=gene_space,
             parent_selection_type="tournament",
@@ -139,22 +143,17 @@ class Optimizer:
         )
 
         ga_instance.run()
+
         solution, solution_fitness, _ = ga_instance.best_solution()
 
-        solution_matrix = solution.reshape((n_schedules, num_timesteps))
+        self.save_to_csv()
 
-        return solution_matrix, solution_fitness
+        return solution, solution_fitness
 
     def callback_generation(self, ga_instance):
         solution, solution_fitness, _ = ga_instance.best_solution()
-
-        if self.initialization_time is None:
-            self.initialization_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
         self.best_individuals_per_generation.append(solution)
         self.fitness_per_generation.append(solution_fitness)
-
-        self.save_to_csv()
 
     def save_to_csv(self):
         df = pd.DataFrame({
@@ -164,3 +163,5 @@ class Optimizer:
 
         filename = f"generation_data_{self.initialization_time}.csv"
         df.to_csv(filename, index=False)
+
+   

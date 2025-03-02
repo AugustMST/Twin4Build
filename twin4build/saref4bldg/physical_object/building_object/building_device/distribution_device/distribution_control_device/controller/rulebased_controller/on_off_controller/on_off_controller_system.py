@@ -9,14 +9,16 @@ from twin4build.utils.signature_pattern.signature_pattern import SignaturePatter
 import twin4build.utils.input_output_types as tps
 
 def get_signature_pattern():
+    node00 = Node(cls=(base.BuildingSpace), id="<Space\nn<SUB>1</SUB>>")
     node0 = Node(cls=(base.RulebasedController,), id="<Controller\nn<SUB>1</SUB>>")
     node1 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>2</SUB>>")
     node2 = Node(cls=(base.Property,), id="<Property\nn<SUB>3</SUB>>")
     node3 = Node(cls=(base.Schedule,), id="<Schedule\nn<SUB>4</SUB>>")
-    sp = SignaturePattern(ownedBy="OnOffControllerSystem")
+    sp = SignaturePattern(ownedBy="OnOffControllerSystem", priority= 1200)
     sp.add_edge(Exact(object=node0, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node1, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node0, subject=node3, predicate="hasProfile"))
+    sp.add_edge(Exact(object=node0, subject=node00, predicate="isContainedIn"))
     sp.add_input("actualValue", node1, "measuredValue")
     sp.add_input("setpointValue", node3, "scheduleValue")
     sp.add_modeled_node(node0)

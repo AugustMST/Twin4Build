@@ -36,6 +36,7 @@ class Optimizer:
                     rsetattr(controller, setpoint_name, value)
                     gene_index += 1
 
+
             try:
                 results_dict = evaluator.evaluate(
                     startTime=startTime,

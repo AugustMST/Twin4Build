@@ -9,9 +9,9 @@ from twin4build.saref.property_.Co2.Co2 import Co2
 from twin4build.utils.rsetattr import rsetattr
 
 def frange(start, stop, step):
-        while start <= stop:
-            yield start
-            start += step
+    while start <= stop:
+        yield start
+        start += step
 
 class Optimizer:
     def __init__(self, model=None):
@@ -20,91 +20,95 @@ class Optimizer:
         self.fitness_per_generation = []
         self.initialization_time = None
 
-    def fitness_function_wrapper(self, model, evaluator, startTime, endTime, stepSize, 
-                                 controllers, setpoints_per_controller, 
-                                 measuring_devices, weights, tchebycheff_z_star, electricty_prices, heating_prices):
-        """
-        Wrapper to generate the actual fitness function for GA.
-        Each gene corresponds to one static setpoint value.
-        """
-        def fitness_function(ga_instance, solution, solution_idx):
-            gene_index = 0
-            for ctrl_idx, controller_name in enumerate(controllers):
-                controller = model.component_dict[controller_name]
-                for setpoint_name in setpoints_per_controller[ctrl_idx]:
-                    value = solution[gene_index]
-                    rsetattr(controller, setpoint_name, value)
-                    gene_index += 1
+    def fitness_function(self, ga_instance, solution, solution_idx):
+        gene_index = 0
+        # Loop through each controller and setpoint
+        for ctrl_idx, controller_name in enumerate(self.controllers):
+            controller = self.model.component_dict[controller_name]
+            for setpoint_name in self.setpoints_per_controller[ctrl_idx]:
+                value = solution[gene_index]
+                rsetattr(controller, setpoint_name, value)
+                gene_index += 1
 
+        try:
+            # Evaluate the model
+            results_dict = self.evaluator.evaluate(
+                startTime=self.startTime,
+                endTime=self.endTime,
+                stepSize=self.stepSize,
+                models=[self.model],
+                measuring_devices=self.measuring_devices,
+                evaluation_metrics=["T"] * len(self.measuring_devices),
+                method="optimize",
+                single_plot=False,
+                include_measured=False,
+                measuring_device_name_map=None,
+                options=None,
+                modelTotalKpi=False,
+                absolute=True,
+                electricity_prices=self.electricity_prices,
+                heating_prices=self.heating_prices,
+                KPI=None,
+                show=True
+            )
 
-            try:
-                results_dict = evaluator.evaluate(
-                    startTime=startTime,
-                    endTime=endTime,
-                    stepSize=stepSize,
-                    models=[model],
-                    measuring_devices=measuring_devices,
-                    evaluation_metrics=["T"] * len(measuring_devices),
-                    method="optimize",
-                    single_plot=False,
-                    include_measured=False,
-                    measuring_device_name_map=None,
-                    options=None,
-                    modelTotalKpi=False,
-                    absolute=True,
-                    electricity_prices=electricty_prices,
-                    heating_prices=heating_prices,
-                    KPI=None,
-                    show=True
-                )
+            # Extract relevant results
+            temperature = results_dict.get((Temperature, "temperature"), 0.0)
+            co2 = results_dict.get((Co2, "co2"), 0.0)
+            energy_consumption = results_dict.get((Energy, "energy"), 0.0)
+            power_consumption = results_dict.get((Power, "power"), 0.0)
+            energy_cost = results_dict.get((Energy, "cost"), 0.0)
+            power_cost = results_dict.get((Power, "cost"), 0.0)
 
-                temperature = results_dict.get((Temperature, "temperature"), 0.0)
-                co2 = results_dict.get((Co2, "co2"), 0.0)
-                energy_consumption = results_dict.get((Energy, "energy"), 0.0)
-                power_consumption = results_dict.get((Power, "power"), 0.0)
-                energy_cost = results_dict.get((Energy, "cost"), 0.0)
-                power_cost = results_dict.get((Power, "cost"), 0.0)
+            # Calculate total consumption and total cost
+            total_consumption = energy_consumption + power_consumption
+            total_cost = energy_cost + power_cost
 
-                total_consumption = energy_consumption + power_consumption
-                total_cost = energy_cost + power_cost
+            # Cost list for the optimization
+            cost = [temperature, co2, total_consumption, total_cost]
 
-                cost = [temperature, co2, total_consumption, total_cost]
+            # Apply the Tchebycheff method for multi-objective optimization
+            tchebycheff_cost_list = [
+                self.weights[i] * abs(cost[i] - self.tchebycheff_z_star[i])
+                for i in range(len(cost))
+            ]
 
-                tchebycheff_cost_list = [
-                    weights[i] * abs(cost[i] - tchebycheff_z_star[i])
-                    for i in range(len(cost))
-                ]
+            fitness = -max(tchebycheff_cost_list)
 
-                fitness = -max(tchebycheff_cost_list)
+        except FMICallException:
+            fitness = -1e+10
 
-            except FMICallException:
-                fitness = -1e+10
-
-            return fitness
-
-        return fitness_function
+        return fitness
 
     def run_ga(self, model, evaluator, stepSize, startTime, endTime, 
-           controllers, setpoints_per_controller, 
-           measuring_devices, weights, tchebycheff_z_star,
-           num_generations=15, population_size=3, 
-           crossover_rate=0.5, mutation_rate=0.3, 
-           setpoint_ranges=None, setpoint_interval=None, electricty_prices = None, heating_prices = None):
-    
+               controllers, setpoints_per_controller, 
+               measuring_devices, weights, tchebycheff_z_star,
+               num_generations=15, population_size=3, 
+               crossover_rate=0.5, mutation_rate=0.3, 
+               setpoint_ranges=None, setpoint_interval=None, 
+               electricty_prices=None, heating_prices=None, 
+               num_cores=1):
+        # Store the context needed by the fitness function
+        self.model = model
+        self.evaluator = evaluator
+        self.startTime = startTime
+        self.endTime = endTime
+        self.stepSize = stepSize
+        self.controllers = controllers
+        self.setpoints_per_controller = setpoints_per_controller
+        self.measuring_devices = measuring_devices
+        self.weights = weights
+        self.tchebycheff_z_star = tchebycheff_z_star
+        self.electricity_prices = electricty_prices
+        self.heating_prices = heating_prices
+
         if setpoint_ranges is None:
             raise ValueError("setpoint_ranges must be provided as a flat list of [min, max] pairs.")
         
         if setpoint_interval is None:
             setpoint_interval = [0.5] * len(controllers)  # Assuming 0.5 interval for all controllers
 
-        # Fitness function wrapper
-        fitness_function = self.fitness_function_wrapper(
-            model, evaluator, startTime, endTime, stepSize,
-            controllers, setpoints_per_controller, 
-            measuring_devices, weights, tchebycheff_z_star,
-            electricty_prices, heating_prices
-        )
-
+        # Create the gene space (possible values for each gene)
         gene_space = []
 
         # Process each controller and its setpoints
@@ -131,7 +135,7 @@ class Optimizer:
         ga_instance = pygad.GA(
             num_generations=num_generations,
             num_parents_mating=int(crossover_rate * population_size),
-            fitness_func=fitness_function,
+            fitness_func=self.fitness_function,  # Directly use the instance method
             sol_per_pop=population_size,
             num_genes=num_genes,
             mutation_percent_genes=int(mutation_rate * 100),
@@ -140,7 +144,8 @@ class Optimizer:
             crossover_type="single_point",
             mutation_type="random",
             mutation_by_replacement=True,
-            on_generation=self.callback_generation
+            on_generation=self.callback_generation,
+            parallel_processing=("process", num_cores)  # Enable parallel processing
         )
 
         ga_instance.run()
@@ -164,5 +169,3 @@ class Optimizer:
 
         filename = f"generation_data_{self.initialization_time}.csv"
         df.to_csv(filename, index=False)
-
-   

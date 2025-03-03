@@ -7,6 +7,7 @@ from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.temperature.temperature import Temperature
 from twin4build.saref.property_.Co2.Co2 import Co2
 from twin4build.utils.rsetattr import rsetattr
+import ast
 
 
 def frange(start, stop, step):
@@ -21,8 +22,6 @@ class Optimizer:
         self.best_individuals_per_generation = []
         self.fitness_per_generation = []
         self.initialization_time = None
-        self.convergence_counter = 0  # Counter for convergence checking
-        self.best_fitness = None  # Track the best fitness value
 
     def fitness_function(self, ga_instance, solution, solution_idx):
         gene_index = 0
@@ -86,8 +85,16 @@ class Optimizer:
                crossover_rate=0.5, mutation_rate=0.3, 
                setpoint_ranges=None, setpoint_interval=None, 
                electricity_prices=None, heating_prices=None, 
-               num_cores=1, convergence_threshold=1e-4, patience=6):
+               num_cores=1, stop_criteria=None):
+        """
+        Run the Genetic Algorithm with rank selection and optional stop criteria.
 
+        Args:
+            stop_criteria (str or list): Stop criteria for the GA. Examples:
+                - "reach_40": Stop if fitness >= 40.
+                - "saturate_7": Stop if fitness does not change for 7 generations.
+                - ["reach_40", "saturate_7"]: Combine multiple criteria.
+        """
         self.model = model
         self.evaluator = evaluator
         self.startTime = startTime
@@ -100,8 +107,6 @@ class Optimizer:
         self.tchebycheff_z_star = tchebycheff_z_star
         self.electricity_prices = electricity_prices
         self.heating_prices = heating_prices
-        self.convergence_threshold = convergence_threshold
-        self.patience = patience
 
         if setpoint_ranges is None:
             raise ValueError("setpoint_ranges must be provided as a flat list of [min, max] pairs.")
@@ -130,13 +135,13 @@ class Optimizer:
             num_genes=num_genes,
             mutation_percent_genes=int(mutation_rate * 100),
             gene_space=gene_space,
-            parent_selection_type="tournament",
-            K_tournament=min(3, population_size),  # Ensure K_tournament <= population_size
+            parent_selection_type="rank",  # Use rank selection
             crossover_type="single_point",
             mutation_type="random",
             mutation_by_replacement=True,
             on_generation=self.callback_generation,
-            parallel_processing=("process", num_cores)
+            parallel_processing=("process", num_cores),
+            stop_criteria=stop_criteria  # Add stop criteria here
         )
 
         ga_instance.run()
@@ -150,24 +155,7 @@ class Optimizer:
         solution, solution_fitness, _ = ga_instance.best_solution()
         self.best_individuals_per_generation.append(solution)
         self.fitness_per_generation.append(solution_fitness)
-
-        # Check for convergence
-        if self.best_fitness is None:
-            self.best_fitness = solution_fitness
-        else:
-            improvement = abs(solution_fitness - self.best_fitness)
-            if improvement < self.convergence_threshold:
-                self.convergence_counter += 1
-            else:
-                self.convergence_counter = 0
-                self.best_fitness = solution_fitness
-
         print(f"Generation {len(self.fitness_per_generation)}: Best Fitness = {solution_fitness}")
-
-        # Stop the GA if convergence is detected
-        if self.convergence_counter >= self.patience:
-            print(f"Convergence detected. Stopping optimization.")
-            ga_instance.run_completed = True  # Stop the GA
 
     def save_to_csv(self):
         df = pd.DataFrame({
@@ -176,3 +164,29 @@ class Optimizer:
         })
         filename = f"generation_data_{self.initialization_time}.csv"
         df.to_csv(filename, index=False)
+
+    def initialize_model_with_best_solution(self, csv_filename, controllers, setpoints_per_controller):
+        """
+        Initializes the model with the best solution from the CSV file.
+
+        Args:
+            csv_filename (str): The filename of the CSV file containing the optimization results.
+            controllers (list): List of controller names.
+            setpoints_per_controller (list): List of lists, where each sublist contains setpoints for a controller.
+        """
+        df = pd.read_csv(csv_filename)
+
+        best_row = df.loc[df['fitness_per_generation'].idxmax()]
+        best_individual = best_row['best_individuals_per_generation']
+
+        best_individual = ast.literal_eval(best_individual)
+
+        gene_index = 0
+        for ctrl_idx, controller_name in enumerate(controllers):
+            controller = self.model.component_dict[controller_name]
+            for setpoint_name in setpoints_per_controller[ctrl_idx]:
+                value = best_individual[gene_index]
+                rsetattr(controller, setpoint_name, value)
+                gene_index += 1
+
+        print("Model initialized with the best solution from the CSV file.")

@@ -125,7 +125,7 @@ class Evaluator:
 
                 if evaluation_metric == "T":
                     filtered_df = cost_kpi
-                    filtered_df["cost"] = filtered_df["cost"].cumsum()
+                    filtered_df.loc[:, "cost"] = filtered_df["cost"].cumsum()
                     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 else:
                     filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
@@ -457,7 +457,8 @@ class Evaluator:
                 self.simulator.simulate(model,
                                         stepSize=stepSize,
                                         startTime=startTime,
-                                        endTime=endTime)
+                                        endTime=endTime,
+                                        show_progress_bar = False)
                 df_simulation_readings = self.simulator.get_simulation_readings()
                 df_simulation_readings = df_simulation_readings.iloc[initialization_period:]
 

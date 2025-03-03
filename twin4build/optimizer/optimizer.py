@@ -1,4 +1,5 @@
 import pygad
+from tqdm import tqdm
 import pandas as pd
 from datetime import datetime
 from fmpy.fmi2 import FMICallException
@@ -87,7 +88,7 @@ class Optimizer:
                crossover_rate=0.5, mutation_rate=0.3, 
                setpoint_ranges=None, setpoint_interval=None, 
                electricty_prices=None, heating_prices=None, 
-               num_cores=1, convergence_threshold=1e-4, patience=3):
+               num_cores=1):
         # Store the context needed by the fitness function
         self.model = model
         self.evaluator = evaluator
@@ -131,48 +132,40 @@ class Optimizer:
 
         self.initialization_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-        # Set up and run the genetic algorithm
-        ga_instance = pygad.GA(
-            num_generations=num_generations,
-            num_parents_mating=int(crossover_rate * population_size),
-            fitness_func=self.fitness_function,  # Directly use the instance method
-            sol_per_pop=population_size,
-            num_genes=num_genes,
-            mutation_percent_genes=int(mutation_rate * 100),
-            gene_space=gene_space,
-            parent_selection_type="tournament",
-            crossover_type="single_point",
-            mutation_type="random",
-            mutation_by_replacement=True,
-            on_generation=self.callback_generation,
-            parallel_processing=("process", num_cores)  # Enable parallel processing
-        )
+        # Fitness function setup
+        fitness_function = lambda ga, solution, idx: self.fitness_function(ga, solution, idx)
 
-        best_fitness_last = None
-        patience_counter = 0
+        # Initialize the progress bar
+        with tqdm(total=num_generations, desc="Iterations Remaining", unit="gen") as pbar:
+            for generation in range(num_generations):
+                # Run one generation of the GA
+                ga_instance = pygad.GA(
+                    num_generations=num_generations,
+                    num_parents_mating=int(crossover_rate * population_size),
+                    fitness_func=fitness_function,
+                    sol_per_pop=population_size,
+                    num_genes=num_genes,
+                    mutation_percent_genes=int(mutation_rate * 100),
+                    gene_space=gene_space,
+                    parent_selection_type="tournament",
+                    crossover_type="single_point",
+                    mutation_type="random",
+                    mutation_by_replacement=True,
+                    on_generation=self.callback_generation,
+                    parallel_processing=("process", num_cores)  # Enable parallel processing
+                )
 
-        for generation in range(num_generations):
-            # Run one generation
-            ga_instance.run()
+                ga_instance.run()
 
-            # Check for convergence
-            solution, solution_fitness, _ = ga_instance.best_solution()
+                # Update the progress bar after each generation
+                pbar.set_postfix(current_generation=generation + 1)
+                pbar.update(1)
 
-            # If the fitness hasn't changed significantly, increase the patience counter
-            if best_fitness_last is not None and abs(best_fitness_last - solution_fitness) < convergence_threshold:
-                patience_counter += 1
-            else:
-                patience_counter = 0
+                # Save the results after each generation
+                self.save_to_csv()
 
-            # If the patience counter reaches the threshold, stop early
-            if patience_counter >= patience:
-                print(f"Early stopping after generation {generation + 1} due to convergence.")
-                break
-
-            best_fitness_last = solution_fitness
-
+        # Get the best solution after all generations
         solution, solution_fitness, _ = ga_instance.best_solution()
-        self.save_to_csv()
 
         return solution, solution_fitness
 
@@ -182,6 +175,7 @@ class Optimizer:
         self.fitness_per_generation.append(solution_fitness)
 
     def save_to_csv(self):
+        # Save intermediate results to CSV after each generation
         df = pd.DataFrame({
             "best_individuals_per_generation": self.best_individuals_per_generation,
             "fitness_per_generation": self.fitness_per_generation

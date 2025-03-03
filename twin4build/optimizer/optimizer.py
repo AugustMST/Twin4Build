@@ -87,7 +87,7 @@ class Optimizer:
                crossover_rate=0.5, mutation_rate=0.3, 
                setpoint_ranges=None, setpoint_interval=None, 
                electricty_prices=None, heating_prices=None, 
-               num_cores=1):
+               num_cores=1, convergence_threshold=1e-4, patience=3):
         # Store the context needed by the fitness function
         self.model = model
         self.evaluator = evaluator
@@ -148,10 +148,30 @@ class Optimizer:
             parallel_processing=("process", num_cores)  # Enable parallel processing
         )
 
-        ga_instance.run()
+        best_fitness_last = None
+        patience_counter = 0
+
+        for generation in range(num_generations):
+            # Run one generation
+            ga_instance.run()
+
+            # Check for convergence
+            solution, solution_fitness, _ = ga_instance.best_solution()
+
+            # If the fitness hasn't changed significantly, increase the patience counter
+            if best_fitness_last is not None and abs(best_fitness_last - solution_fitness) < convergence_threshold:
+                patience_counter += 1
+            else:
+                patience_counter = 0
+
+            # If the patience counter reaches the threshold, stop early
+            if patience_counter >= patience:
+                print(f"Early stopping after generation {generation + 1} due to convergence.")
+                break
+
+            best_fitness_last = solution_fitness
 
         solution, solution_fitness, _ = ga_instance.best_solution()
-
         self.save_to_csv()
 
         return solution, solution_fitness

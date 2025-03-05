@@ -1,5 +1,7 @@
 import pygad
 import pandas as pd
+import ast
+import random
 from datetime import datetime
 from fmpy.fmi2 import FMICallException
 from twin4build.saref.property_.energy.energy import Energy
@@ -7,51 +9,58 @@ from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.temperature.temperature import Temperature
 from twin4build.saref.property_.Co2.Co2 import Co2
 from twin4build.utils.rsetattr import rsetattr
-import ast
-
 
 def frange(start, stop, step):
     while start <= stop:
         yield start
         start += step
 
-
 class Optimizer:
     def __init__(self, model=None):
         self.model = model
         self.best_individuals_per_generation = []
         self.fitness_per_generation = []
-        self.initialization_time = None
+        self.initialization_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.kpi_tracking = None
+        self.setpoint_ranges = None
+        self.iteration_number = 0
 
-    def fitness_function(self, ga_instance, solution, solution_idx):
-        gene_index = 0
+    def initialize_kpi_tracking(self):
+        self.kpi_tracking = {
+            "temperature": [float('inf'), float('-inf')],
+            "co2": [float('inf'), float('-inf')],
+            "consumption": [float('inf'), float('-inf')],
+            "cost": [float('inf'), float('-inf')]
+        }
 
-        for ctrl_idx, controller_name in enumerate(self.controllers):
-            controller = self.model.component_dict[controller_name]
-            for setpoint_name in self.setpoints_per_controller[ctrl_idx]:
-                value = solution[gene_index]
-                rsetattr(controller, setpoint_name, value)
-                gene_index += 1
+    def update_min_max(self, name, value):
+        self.kpi_tracking[name][0] = min(self.kpi_tracking[name][0], value)
+        self.kpi_tracking[name][1] = max(self.kpi_tracking[name][1], value)
 
-        try:
+    def normalize(self, value, kpi_name):
+        min_val, max_val = self.kpi_tracking[kpi_name]
+        if max_val == min_val:
+            return 0.0
+        return (value - min_val) / (max_val - min_val + 1e-6)
+
+    def warmup_simulation(self, num_samples=10):
+        print("Running warmup simulations to establish KPI min/max ranges...")
+        for _ in range(num_samples):
+            for ctrl_idx, controller_name in enumerate(self.controllers):
+                gene_index = 0
+                controller = self.model.component_dict[controller_name]
+                for setpoint_name in self.setpoints_per_controller[ctrl_idx]:
+                    min_val, max_val = self.setpoint_ranges[ctrl_idx][gene_index]
+                    random_setpoint = random.uniform(min_val, max_val)
+                    rsetattr(controller, setpoint_name, random_setpoint)
+                    gene_index += 1
+
             results_dict = self.evaluator.evaluate(
-                startTime=self.startTime,
-                endTime=self.endTime,
-                stepSize=self.stepSize,
-                models=[self.model],
-                measuring_devices=self.measuring_devices,
-                evaluation_metrics=["T"] * len(self.measuring_devices),
-                method="optimize",
-                single_plot=False,
-                include_measured=False,
-                measuring_device_name_map=None,
-                options=None,
-                modelTotalKpi=False,
-                absolute=True,
+                startTime=self.startTime, endTime=self.endTime,
+                stepSize=self.stepSize, models=[self.model],
+                measuring_devices=self.measuring_devices, evaluation_metrics = ["T"]*len(self.measuring_devices),  show=False,
                 electricity_prices=self.electricity_prices,
-                heating_prices=self.heating_prices,
-                KPI=None,
-                show=True
+                heating_prices=self.heating_prices, method = "optimize"
             )
 
             temperature = results_dict.get((Temperature, "temperature"), 0.0)
@@ -64,129 +73,115 @@ class Optimizer:
             total_consumption = energy_consumption + power_consumption
             total_cost = energy_cost + power_cost
 
-            cost = [temperature, co2, total_consumption, total_cost]
+            self.update_min_max("temperature", temperature)
+            self.update_min_max("co2", co2)
+            self.update_min_max("consumption", total_consumption)
+            self.update_min_max("cost", total_cost)
 
-            tchebycheff_cost_list = [
-                self.weights[i] * abs(cost[i] - self.tchebycheff_z_star[i])
-                for i in range(len(cost))
-            ]
+        print("Warmup complete. Initial KPI ranges:", self.kpi_tracking)
 
-            fitness = -max(tchebycheff_cost_list)
+    def fitness_function(self, ga_instance, solution, solution_idx):
+        gene_index = 0
+        for ctrl_idx, controller_name in enumerate(self.controllers):
+            controller = self.model.component_dict[controller_name]
+            for setpoint_name in self.setpoints_per_controller[ctrl_idx]:
+                rsetattr(controller, setpoint_name, solution[gene_index])
+                gene_index += 1
 
+        try:
+            results_dict = self.evaluator.evaluate(
+                startTime=self.startTime, endTime=self.endTime,
+                stepSize=self.stepSize, models=[self.model],
+                measuring_devices=self.measuring_devices, evaluation_metrics = ["T"]*len(self.measuring_devices),  show=False,
+                electricity_prices=self.electricity_prices,
+                heating_prices=self.heating_prices, method = "optimize"
+            )
+
+            temperature = results_dict.get((Temperature, "temperature"), 0.0)
+            co2 = results_dict.get((Co2, "co2"), 0.0)
+            energy_consumption = results_dict.get((Energy, "energy"), 0.0)
+            power_consumption = results_dict.get((Power, "power"), 0.0)
+            energy_cost = results_dict.get((Energy, "cost"), 0.0)
+            power_cost = results_dict.get((Power, "cost"), 0.0)
+
+            total_consumption = energy_consumption + power_consumption
+            total_cost = energy_cost + power_cost
+
+            normalized_temperature = self.normalize(temperature, "temperature")
+            normalized_co2 = self.normalize(co2, "co2")
+            normalized_consumption = self.normalize(total_consumption, "consumption")
+            normalized_cost = self.normalize(total_cost, "cost")
+
+            fitness = -(
+                self.weights[0] * normalized_temperature +
+                self.weights[1] * normalized_co2 +
+                self.weights[2] * normalized_consumption +
+                self.weights[3] * normalized_cost
+            )
         except FMICallException:
             fitness = -1e+10
 
         return fitness
 
-    def run_ga(self, model, evaluator, stepSize, startTime, endTime, 
-               controllers, setpoints_per_controller, 
-               measuring_devices, weights, tchebycheff_z_star,
-               num_generations=15, population_size=3, 
-               crossover_rate=0.5, mutation_rate=0.3, 
-               setpoint_ranges=None, setpoint_interval=None, 
-               electricity_prices=None, heating_prices=None, 
-               num_cores=1, stop_criteria=None):
-        """
-        Run the Genetic Algorithm with rank selection and optional stop criteria.
+    def run_ga(self, model, evaluator, stepSize, startTime, endTime,
+               controllers, setpoints_per_controller,
+               measuring_devices, weights, num_generations=15,
+               population_size=3, crossover_rate=0.5, mutation_rate=0.3,
+               setpoint_ranges=None, setpoint_interval=None,
+               electricity_prices=None, heating_prices=None,
+               num_cores=1, stop_criteria="saturate_8"):
 
-        Args:
-            stop_criteria (str or list): Stop criteria for the GA. Examples:
-                - "reach_40": Stop if fitness >= 40.
-                - "saturate_7": Stop if fitness does not change for 7 generations.
-                - ["reach_40", "saturate_7"]: Combine multiple criteria.
-        """
-        self.model = model
-        self.evaluator = evaluator
-        self.startTime = startTime
-        self.endTime = endTime
-        self.stepSize = stepSize
-        self.controllers = controllers
-        self.setpoints_per_controller = setpoints_per_controller
-        self.measuring_devices = measuring_devices
-        self.weights = weights
-        self.tchebycheff_z_star = tchebycheff_z_star
-        self.electricity_prices = electricity_prices
-        self.heating_prices = heating_prices
+        self.model, self.evaluator = model, evaluator
+        self.startTime, self.endTime, self.stepSize = startTime, endTime, stepSize
+        self.controllers, self.setpoints_per_controller = controllers, setpoints_per_controller
+        self.measuring_devices, self.weights = measuring_devices, weights
+        self.electricity_prices, self.heating_prices = electricity_prices, heating_prices
+        self.setpoint_ranges = setpoint_ranges
 
-        if setpoint_ranges is None:
-            raise ValueError("setpoint_ranges must be provided as a flat list of [min, max] pairs.")
-        if setpoint_interval is None:
-            setpoint_interval = [0.5] * len(controllers)
+        self.initialize_kpi_tracking()
+        self.setpoint_ranges = setpoint_ranges
 
+        # Warmup to establish KPI ranges
+        self.warmup_simulation(num_samples=5)
+
+        # Build gene space using frange
         gene_space = []
-        for controller_index, setpoints in enumerate(setpoints_per_controller):
+        for ctrl_idx, setpoints in enumerate(setpoints_per_controller):
             for setpoint_index, setpoint_name in enumerate(setpoints):
-                min_val, max_val = setpoint_ranges[controller_index][setpoint_index]
-                interval = setpoint_interval[controller_index]
-                possible_values = [round(x, 1) for x in frange(min_val, max_val, interval)]
-                gene_space.append(possible_values)
-
-        num_genes = len(gene_space)
-        assert num_genes == sum(len(sp) for sp in setpoints_per_controller), \
-            f"Mismatch: {num_genes} genes provided but {sum(len(sp) for sp in setpoints_per_controller)} setpoints found."
-
-        self.initialization_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                min_val, max_val = setpoint_ranges[ctrl_idx][setpoint_index]
+                interval = setpoint_interval[ctrl_idx] if setpoint_interval else 0.5
+                space = list(frange(min_val, max_val, interval))
+                space = [round(v, 1) for v in space]
+                gene_space.append(space)
 
         ga_instance = pygad.GA(
             num_generations=num_generations,
             num_parents_mating=int(crossover_rate * population_size),
             fitness_func=self.fitness_function,
             sol_per_pop=population_size,
-            num_genes=num_genes,
+            num_genes=len(gene_space),
             mutation_percent_genes=int(mutation_rate * 100),
             gene_space=gene_space,
-            parent_selection_type="rank",  # Use rank selection
+            parent_selection_type="rank",
             crossover_type="single_point",
             mutation_type="random",
             mutation_by_replacement=True,
             on_generation=self.callback_generation,
             parallel_processing=("process", num_cores),
-            stop_criteria=stop_criteria  # Add stop criteria here
+            stop_criteria=stop_criteria
         )
-
         ga_instance.run()
-
-        solution, solution_fitness, _ = ga_instance.best_solution()
         self.save_to_csv()
 
-        return solution, solution_fitness
-
     def callback_generation(self, ga_instance):
-        solution, solution_fitness, _ = ga_instance.best_solution()
-        self.best_individuals_per_generation.append(solution)
-        self.fitness_per_generation.append(solution_fitness)
-        print(f"Generation {len(self.fitness_per_generation)}: Best Fitness = {solution_fitness}")
+        solution, fitness, _ = ga_instance.best_solution()
+        self.best_individuals_per_generation.append(solution.tolist())
+        self.fitness_per_generation.append(fitness)
+        print("Iteration: ", self.iteration_number, fitness)
+        self.iteration_number = self.iteration_number + 1
 
     def save_to_csv(self):
-        df = pd.DataFrame({
-            "best_individuals_per_generation": self.best_individuals_per_generation,
-            "fitness_per_generation": self.fitness_per_generation
-        })
-        filename = f"generation_data_{self.initialization_time}.csv"
-        df.to_csv(filename, index=False)
-
-    def initialize_model_with_best_solution(self, csv_filename, controllers, setpoints_per_controller):
-        """
-        Initializes the model with the best solution from the CSV file.
-
-        Args:
-            csv_filename (str): The filename of the CSV file containing the optimization results.
-            controllers (list): List of controller names.
-            setpoints_per_controller (list): List of lists, where each sublist contains setpoints for a controller.
-        """
-        df = pd.read_csv(csv_filename)
-
-        best_row = df.loc[df['fitness_per_generation'].idxmax()]
-        best_individual = best_row['best_individuals_per_generation']
-
-        best_individual = ast.literal_eval(best_individual)
-
-        gene_index = 0
-        for ctrl_idx, controller_name in enumerate(controllers):
-            controller = self.model.component_dict[controller_name]
-            for setpoint_name in setpoints_per_controller[ctrl_idx]:
-                value = best_individual[gene_index]
-                rsetattr(controller, setpoint_name, value)
-                gene_index += 1
-
-        print("Model initialized with the best solution from the CSV file.")
+        pd.DataFrame({
+            "best_individuals": self.best_individuals_per_generation,
+            "fitness": self.fitness_per_generation
+        }).to_csv(f"generation_data_{self.initialization_time}.csv", index=False)

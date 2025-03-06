@@ -29,7 +29,7 @@ from twin4build.saref.property_.opening_position.opening_position import Opening
 from twin4build.saref.property_.energy.energy import Energy #This is in use
 from twin4build.model.model import Model
 from twin4build.saref4bldg.building_space.building_space import BuildingSpace
-from twin4build.evaluator.evaluator_kpi_functions import CO2_kpi_function, Temp_kpi_function, power_kpi_function, powerCost_kpi_function
+from twin4build.evaluator.evaluator_kpi_functions import *
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns

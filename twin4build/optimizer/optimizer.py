@@ -141,6 +141,7 @@ class Optimizer:
 
         return pareto_front, pareto_fitness
 
+
     def callback_generation(self, ga_instance):
         print("Iteration", self.iteration_number)
 
@@ -163,9 +164,27 @@ class Optimizer:
         self.iteration_number += 1
 
     def save_to_csv(self):
+        detailed_data, summary_data, full_pop_data = [], [], []
 
-        detailed_data, summary_data = [], []
+        # Full population tracking
+        for gen_data in self.fitness_per_generation:
+            generation = gen_data["generation"]
+            fitness_list = gen_data["fitness"]
 
+            for sol_idx, fit in enumerate(fitness_list):
+                full_pop_data.append({
+                    "generation": generation,
+                    "solution_index": sol_idx,
+                    **{obj: -fit[obj_idx] for obj_idx, obj in enumerate(self.objectives_to_include)}
+                })
+
+            avg_fitness = np.mean(fitness_list, axis=0)
+            summary_data.append({
+                "generation": generation,
+                **{obj: -avg_fitness[idx] for idx, obj in enumerate(self.objectives_to_include)}
+            })
+
+        # Pareto front tracking
         for gen_data in self.best_individuals_per_generation:
             generation = gen_data["generation"]
             for sol_idx, (sol, fit) in enumerate(zip(gen_data["solutions"], gen_data["fitness_values"])):
@@ -176,11 +195,6 @@ class Optimizer:
                     **{obj: -fit[obj_idx] for obj_idx, obj in enumerate(self.objectives_to_include)}
                 })
 
-            # Append the average fitness for the generation
-            summary_data.append({
-                "generation": generation,
-                "pareto_size": gen_data["pareto_size"],
-            })
-
         pd.DataFrame(detailed_data).to_csv(f"detailed_pareto_data_{self.initialization_time}.csv", index=False)
-        pd.DataFrame(summary_data).to_csv(f"summary_pareto_data_{self.initialization_time}.csv", index=False)
+        pd.DataFrame(summary_data).to_csv(f"summary_population_data_{self.initialization_time}.csv", index=False)
+        pd.DataFrame(full_pop_data).to_csv(f"full_population_fitness_{self.initialization_time}.csv", index=False)

@@ -122,9 +122,9 @@ class Evaluator:
             if electricity_prices is not None and isinstance(property_.isPropertyOf, Fan):
                 kpi = power_kpi_function(df_simulation_readings, measuring_device, "H")
                 cost_kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
+                filtered_df = cost_kpi
 
                 if evaluation_metric == "T":
-                    filtered_df = cost_kpi
                     filtered_df.loc[:, "cost"] = filtered_df["cost"].cumsum()
                     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 else:
@@ -515,7 +515,7 @@ class Evaluator:
                 self.simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime)
                 df_simulation_readings = self.simulator.get_simulation_readings()
 
-                rows_to_drop = 144  # Adjust this number depending on the time frequency of the data (e.g., 24 for hourly data, 1440 for minute-based data)
+                rows_to_drop = 144
                 df_simulation_readings = df_simulation_readings.iloc[rows_to_drop:]
 
                 df_simulation_readings_list.append(df_simulation_readings)

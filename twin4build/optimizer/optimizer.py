@@ -3,9 +3,11 @@ import pandas as pd
 from datetime import datetime
 from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga2 import NSGA2
+from pymoo.algorithms.moo.nsga3 import NSGA3
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.operators.sampling.rnd import IntegerRandomSampling
+from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.optimize import minimize
 from pymoo.termination import get_termination
 from pymoo.core.callback import Callback
@@ -25,6 +27,25 @@ def frange(start, stop, step):
     while start <= stop:
         yield start
         start += step
+
+def calculate_n_partitions(n_obj, target_points):
+    """
+    Calculate n_partitions such that the number of reference points is <= target_points.
+    
+    Parameters:
+    - n_obj (int): Number of objectives.
+    - target_points (int): Desired number of reference points (e.g., population_size).
+    
+    Returns:
+    - n_partitions (int): The largest n_partitions where the number of reference points <= target_points.
+    """
+    n_partitions = 1
+    while True:
+        ref_dirs = get_reference_directions("das-dennis", n_obj, n_partitions=n_partitions)
+        num_points = len(ref_dirs)
+        if num_points > target_points:
+            return max(1, n_partitions - 1) 
+        n_partitions += 1
 
 class OptimizationProblem(Problem):
     def __init__(self, model, evaluator, startTime, endTime, stepSize, controllers, 
@@ -94,6 +115,7 @@ class OptimizationProblem(Problem):
                 measuring_devices=self.measuring_devices,
                 evaluation_metrics=["T"] * len(self.measuring_devices),
                 method="optimize",
+                initialization_period = 144,
                 electricity_prices=self.electricity_prices,
                 heating_prices=self.heating_prices
             )
@@ -144,22 +166,72 @@ class Optimizer:
         self.model = model
         self.best_individuals_per_generation = []
 
-    def run_ga(self, problem, num_generations=15, population_size=3, crossover_rate=0.5, mutation_rate=0.3, num_cores=4, save_dir="results"):
+    def run_ga(self, problem, num_generations=15, population_size=3, crossover_rate=0.5, mutation_rate=0.3, num_cores=4, save_dir="results", algorithm_type="NSGA2"):
+        """
+        Run genetic algorithm optimization using either NSGA-II or NSGA-III.
+
+        Parameters:
+        - problem: The optimization problem instance.
+        - num_generations (int): Number of generations to run.
+        - population_size (int): Population size for the algorithm.
+        - crossover_rate (float): Probability of crossover.
+        - mutation_rate (float): Probability of mutation.
+        - num_cores (int): Number of cores for parallel evaluation.
+        - save_dir (str): Directory to save results.
+        - algorithm_type (str): Type of algorithm to use ("NSGA2" or "NSGA3").
+
+        Returns:
+        - discrete_X (np.array): Discrete design variables of the final solutions.
+        - res.F (np.array): Objective values of the final solutions.
+        """
         # Ensure save_dir exists
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
             print(f"Created directory: {save_dir}")
 
-        algorithm = NSGA2(
-            pop_size=population_size,
-            sampling=IntegerRandomSampling(),
-            crossover=SBX(prob=crossover_rate, eta=15.0),
-            mutation=PM(prob=mutation_rate, eta=20.0),
-            eliminate_duplicates=True
-        )
+        # Choose the algorithm based on algorithm_type
+        if algorithm_type == "NSGA2":
+            algorithm = NSGA2(
+                pop_size=population_size,
+                sampling=IntegerRandomSampling(),
+                crossover=SBX(prob=crossover_rate, eta=15.0),
+                mutation=PM(prob=mutation_rate, eta=20.0),
+                eliminate_duplicates=True
+            )
+        elif algorithm_type == "NSGA3":
+            # Determine the number of objectives dynamically
+            n_obj = len(problem.objectives_to_include)
+            
+            # Calculate n_partitions based on population_size
+            n_partitions = calculate_n_partitions(n_obj, population_size)
+            
+            # Generate reference directions
+            ref_dirs = get_reference_directions("das-dennis", n_obj, n_partitions=n_partitions)
+            num_ref_points = len(ref_dirs)
+            print(f"Using NSGA-III with n_obj={n_obj}, n_partitions={n_partitions}, generating {num_ref_points} reference points for population_size={population_size}")
+
+            # Adjust population_size to be at least the number of reference points
+            adjusted_pop_size = max(population_size, num_ref_points)
+            if adjusted_pop_size != population_size:
+                print(f"Adjusted population_size from {population_size} to {adjusted_pop_size} to match the number of reference points.")
+                population_size = adjusted_pop_size
+
+            algorithm = NSGA3(
+                pop_size=population_size,
+                ref_dirs=ref_dirs,
+                sampling=IntegerRandomSampling(),
+                crossover=SBX(prob=crossover_rate, eta=15.0),
+                mutation=PM(prob=mutation_rate, eta=20.0),
+                eliminate_duplicates=True
+            )
+        else:
+            raise ValueError(f"Unsupported algorithm_type: {algorithm_type}. Choose 'NSGA2' or 'NSGA3'.")
+
+        # Set up termination and callback
         termination = get_termination("n_gen", num_generations)
         callback = HistoryCallback()
 
+        # Run the optimization
         res = minimize(
             problem,
             algorithm,
@@ -169,6 +241,7 @@ class Optimizer:
         )
         problem.close()
 
+        # Process the results
         if res.X.ndim == 1:
             discrete_X = problem.map_to_discrete(res.X)
         else:
@@ -201,7 +274,8 @@ class Optimizer:
             "num_generations": num_generations,
             "population_size": population_size,
             "crossover_rate": crossover_rate,
-            "mutation_rate": mutation_rate
+            "mutation_rate": mutation_rate,
+            "algorithm_type": algorithm_type  # Add algorithm type to config
         }
         config_path = os.path.join(save_dir, "problem_config.pkl")
         with open(config_path, "wb") as f:

@@ -48,6 +48,34 @@ def calculate_n_partitions(n_obj, target_points):
             return max(1, n_partitions - 1) 
         n_partitions += 1
 
+def custom_sampling(initial_solution, problem, n_samples):
+    """
+    Generate an initial population with the specified initial solution as the first individual.
+
+    Parameters:
+    - initial_solution (np.array): The initial solution to include (array of indices).
+    - problem (OptimizationProblem): The optimization problem instance.
+    - n_samples (int): The desired population size.
+
+    Returns:
+    - X (np.array): The initial population array of shape (n_samples, n_var).
+    """
+    # Ensure initial_solution matches the number of variables
+    if len(initial_solution) != problem.n_var:
+        raise ValueError(f"Initial solution length ({len(initial_solution)}) must match n_var ({problem.n_var})")
+
+    # Initialize the population array
+    X = np.zeros((n_samples, problem.n_var), dtype=int)
+    
+    # Set the first individual as the initial solution
+    X[0] = initial_solution
+    
+    # Fill the rest with random samples within bounds
+    for i in range(1, n_samples):
+        X[i] = np.random.randint(problem.xl, problem.xu + 1, size=problem.n_var)
+    
+    return X
+
 class OptimizationProblem(Problem):
     def __init__(self, model, evaluator, startTime, endTime, stepSize, controllers, 
                  setpoints_per_controller, measuring_devices, objectives_to_include, 
@@ -167,7 +195,9 @@ class Optimizer:
         self.model = model
         self.best_individuals_per_generation = []
 
-    def run_ga(self, problem, num_generations=15, population_size=3, crossover_rate=0.5, mutation_rate=0.3, num_cores=4, save_dir="results", algorithm_type="NSGA2"):
+    def run_ga(self, problem, num_generations=15, population_size=3, crossover_rate=0.5, 
+           mutation_rate=0.3, num_cores=4, save_dir="results", algorithm_type="NSGA2", 
+           initial_solution=None):
         """
         Run genetic algorithm optimization using either NSGA-II or NSGA-III.
 
@@ -180,6 +210,7 @@ class Optimizer:
         - num_cores (int): Number of cores for parallel evaluation.
         - save_dir (str): Directory to save results.
         - algorithm_type (str): Type of algorithm to use ("NSGA2" or "NSGA3").
+        - initial_solution (np.array, optional): Initial solution to include in the population.
 
         Returns:
         - discrete_X (np.array): Discrete design variables of the final solutions.
@@ -190,28 +221,28 @@ class Optimizer:
             os.makedirs(save_dir)
             print(f"Created directory: {save_dir}")
 
+        # Define sampling method
+        if initial_solution is not None:
+            sampling = custom_sampling(initial_solution, problem, population_size)
+        else:
+            sampling = IntegerRandomSampling() if algorithm_type == "NSGA2" else LHS()
+
         # Choose the algorithm based on algorithm_type
         if algorithm_type == "NSGA2":
             algorithm = NSGA2(
                 pop_size=population_size,
-                sampling=IntegerRandomSampling(),
+                sampling=sampling,
                 crossover=SBX(prob=crossover_rate, eta=15.0),
                 mutation=PM(prob=mutation_rate, eta=20.0),
                 eliminate_duplicates=True
             )
         elif algorithm_type == "NSGA3":
-            # Determine the number of objectives dynamically
             n_obj = len(problem.objectives_to_include)
-            
-            # Calculate n_partitions based on population_size
             n_partitions = calculate_n_partitions(n_obj, population_size)
-            
-            # Generate reference directions
             ref_dirs = get_reference_directions("das-dennis", n_obj, n_partitions=n_partitions)
             num_ref_points = len(ref_dirs)
             print(f"Using NSGA-III with n_obj={n_obj}, n_partitions={n_partitions}, generating {num_ref_points} reference points for population_size={population_size}")
 
-            # Adjust population_size to be at least the number of reference points
             adjusted_pop_size = max(population_size, num_ref_points)
             if adjusted_pop_size != population_size:
                 print(f"Adjusted population_size from {population_size} to {adjusted_pop_size} to match the number of reference points.")
@@ -220,7 +251,7 @@ class Optimizer:
             algorithm = NSGA3(
                 pop_size=population_size,
                 ref_dirs=ref_dirs,
-                sampling=LHS(),
+                sampling=sampling,
                 crossover=SBX(prob=crossover_rate, eta=15.0),
                 mutation=PM(prob=mutation_rate, eta=20.0),
                 eliminate_duplicates=True
@@ -242,7 +273,7 @@ class Optimizer:
         )
         problem.close()
 
-        # Process the results
+        # Process the results (unchanged)
         if res.X.ndim == 1:
             discrete_X = problem.map_to_discrete(res.X)
         else:
@@ -257,7 +288,7 @@ class Optimizer:
         pareto_df.to_csv(pareto_path, index=False)
         print(f"Saved Pareto front to {pareto_path}")
 
-        # Save problem configuration
+        # Save problem configuration (unchanged)
         config = {
             "startTime": problem.startTime,
             "endTime": problem.endTime,
@@ -276,14 +307,14 @@ class Optimizer:
             "population_size": population_size,
             "crossover_rate": crossover_rate,
             "mutation_rate": mutation_rate,
-            "algorithm_type": algorithm_type  # Add algorithm type to config
+            "algorithm_type": algorithm_type
         }
         config_path = os.path.join(save_dir, "problem_config.pkl")
         with open(config_path, "wb") as f:
             pickle.dump(config, f)
         print(f"Saved problem configuration to {config_path}")
 
-        # Save convergence history
+        # Save convergence history (unchanged)
         history_data = {
             "X": [X for X, _ in callback.history],
             "F": [F for _, F in callback.history],

@@ -7,6 +7,7 @@ from pymoo.algorithms.moo.nsga3 import NSGA3
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.operators.sampling.rnd import IntegerRandomSampling
+from pymoo.operators.sampling.lhs import LHS
 from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.optimize import minimize
 from pymoo.termination import get_termination
@@ -219,7 +220,7 @@ class Optimizer:
             algorithm = NSGA3(
                 pop_size=population_size,
                 ref_dirs=ref_dirs,
-                sampling=IntegerRandomSampling(),
+                sampling=LHS(),
                 crossover=SBX(prob=crossover_rate, eta=15.0),
                 mutation=PM(prob=mutation_rate, eta=20.0),
                 eliminate_duplicates=True

@@ -89,7 +89,10 @@ class Evaluator:
 
         elif isinstance(property_, Energy):
             if evaluation_metric == "T":
-                filtered_df = df_simulation_readings.tail(n=1).set_index(pd.Index(["Total"]))
+                filtered_df = df_simulation_readings.resample(f'1{"h"}')
+                filtered_df = filtered_df.last() - filtered_df.first()
+                filtered_df = filtered_df.cumsum()
+                filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 kpi = filtered_df[[measuring_device]]
             else:
                 filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')

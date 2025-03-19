@@ -181,14 +181,47 @@ class OptimizationProblem(Problem):
         pass
 
 class HistoryCallback(Callback):
-    def __init__(self):
+    def __init__(self, save_dir="results"):
         super().__init__()
         self.history = []
+        self.save_dir = save_dir
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
     def notify(self, algorithm):
+        # Get current population
         X = algorithm.pop.get("X")
         F = algorithm.pop.get("F")
         self.history.append((X, F))
+
+        # Compute Pareto front (non-dominated solutions)
+        pareto_mask = self.get_pareto_front(F)
+        pareto_X = X[pareto_mask]
+        pareto_F = F[pareto_mask]
+
+        # Save Pareto front after each generation
+        iteration = len(self.history)
+        iter_path = os.path.join(self.save_dir, f"pareto_front_{iteration}.pkl")
+        with open(iter_path, "wb") as f:
+            pickle.dump({"X": pareto_X, "F": pareto_F}, f)
+
+        # Save as CSV for easy inspection
+        df = pd.DataFrame(np.hstack((pareto_X, pareto_F)), 
+                          columns=[f"x{i+1}" for i in range(pareto_X.shape[1])] + 
+                                  [f"f{j+1}" for j in range(pareto_F.shape[1])])
+        csv_path = os.path.join(self.save_dir, f"pareto_front_{iteration}.csv")
+        df.to_csv(csv_path, index=False)
+
+    def get_pareto_front(self, F):
+        """
+        Find Pareto-optimal solutions from the population.
+        """
+        is_efficient = np.ones(F.shape[0], dtype=bool)
+        for i, f in enumerate(F):
+            if is_efficient[i]:
+                is_efficient[is_efficient] = np.any(F[is_efficient] < f, axis=1)
+                is_efficient[i] = True  # Keep current point as efficient
+        return is_efficient
 
 class Optimizer:
     def __init__(self, model=None):
@@ -286,7 +319,6 @@ class Optimizer:
         )
         pareto_path = os.path.join(save_dir, "pareto_front.csv")
         pareto_df.to_csv(pareto_path, index=False)
-        print(f"Saved Pareto front to {pareto_path}")
 
         # Save problem configuration (unchanged)
         config = {

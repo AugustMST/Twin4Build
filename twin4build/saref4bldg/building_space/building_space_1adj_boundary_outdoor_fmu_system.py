@@ -35,12 +35,17 @@ def get_signature_pattern():
     node15 = Node(cls=base.PropertyValue, id="<PropertyValue\nn<SUB>16</SUB>>")
     node16 = Node(cls=str, id="<String\nn<SUB>17</SUB>>")
     node17 = Node(cls=base.TemperatureRating, id="<TemperatureRating\nn<SUB>18</SUB>>")
+    node18 = Node(cls=base.Peer, id="<PeerValue\nn<SUB>19</SUB>>")
+
     sp = SignaturePattern(ownedBy="BuildingSpace1AdjBoundaryOutdoorFMUSystem", priority=160)
 
     sp.add_edge(Exact(object=node0, subject=node2, predicate="suppliesFluidTo"))
     sp.add_edge(Exact(object=node1, subject=node2, predicate="hasFluidReturnedBy"))
     sp.add_edge(Exact(object=node3, subject=node2, predicate="isContainedIn"))
     sp.add_edge(Exact(object=node4, subject=node2, predicate="isContainedIn"))
+    sp.add_edge(Exact(object=node10, subject=node2, predicate="isContainedIn"))
+    sp.add_edge(Exact(object=node10, subject=node18, predicate="observes"))
+    sp.add_edge(Exact(object=node2, subject=node18, predicate="hasProperty"))
     sp.add_edge(Exact(object=node3, subject=node4, predicate="suppliesFluidTo"))
     sp.add_edge(Exact(object=node2, subject=node5, predicate="hasProfile"))
     sp.add_edge(Exact(object=node2, subject=node6, predicate="connectedTo"))

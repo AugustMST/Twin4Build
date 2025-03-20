@@ -181,12 +181,16 @@ class OptimizationProblem(Problem):
         pass
 
 class HistoryCallback(Callback):
-    def __init__(self, save_dir="results"):
+    def __init__(self, save_dir=("generated_files/NSGA/results")):
         super().__init__()
         self.history = []
         self.save_dir = save_dir
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
+        self.csv_path = os.path.join(self.save_dir, "pareto_front.csv")
+        # Initialize an empty DataFrame with headers to be set later
+        self.pareto_df = None
+        self.generation = 1  # Track the generation number
 
     def notify(self, algorithm):
         # Get current population
@@ -199,18 +203,26 @@ class HistoryCallback(Callback):
         pareto_X = X[pareto_mask]
         pareto_F = F[pareto_mask]
 
-        # Save Pareto front after each generation
-        iteration = len(self.history)
-        iter_path = os.path.join(self.save_dir, f"pareto_front_{iteration}.pkl")
-        with open(iter_path, "wb") as f:
-            pickle.dump({"X": pareto_X, "F": pareto_F}, f)
+        # Create DataFrame for the current generation's Pareto front
+        current_df = pd.DataFrame(
+            np.hstack((pareto_X, pareto_F)),
+            columns=[f"x{i+1}" for i in range(pareto_X.shape[1])] +
+                    [f"f{j+1}" for j in range(pareto_F.shape[1])]
+        )
+        # Add generation column
+        current_df["gen"] = self.generation
 
-        # Save as CSV for easy inspection
-        df = pd.DataFrame(np.hstack((pareto_X, pareto_F)), 
-                          columns=[f"x{i+1}" for i in range(pareto_X.shape[1])] + 
-                                  [f"f{j+1}" for j in range(pareto_F.shape[1])])
-        csv_path = os.path.join(self.save_dir, f"pareto_front_{iteration}.csv")
-        df.to_csv(csv_path, index=False)
+        # Initialize or append to the main DataFrame
+        if self.pareto_df is None:
+            self.pareto_df = current_df
+            self.pareto_df.to_csv(self.csv_path, index=False)
+        else:
+            # Append new Pareto solutions to the existing DataFrame
+            self.pareto_df = pd.concat([self.pareto_df, current_df], ignore_index=True)
+            self.pareto_df.to_csv(self.csv_path, index=False)
+
+        # Increment generation number for the next iteration
+        self.generation += 1
 
     def get_pareto_front(self, F):
         """
@@ -259,14 +271,15 @@ class Optimizer:
             sampling = custom_sampling(initial_solution, problem, population_size)
         else:
             sampling = IntegerRandomSampling() if algorithm_type == "NSGA2" else LHS()
+            sampling = LHS()
 
         # Choose the algorithm based on algorithm_type
         if algorithm_type == "NSGA2":
             algorithm = NSGA2(
                 pop_size=population_size,
                 sampling=sampling,
-                crossover=SBX(prob=crossover_rate, eta=15.0),
-                mutation=PM(prob=mutation_rate, eta=20.0),
+                crossover=SBX(prob=crossover_rate, eta=5.0),
+                mutation=PM(prob=mutation_rate, eta=30.0),
                 eliminate_duplicates=True
             )
         elif algorithm_type == "NSGA3":
@@ -320,7 +333,6 @@ class Optimizer:
         pareto_path = os.path.join(save_dir, "pareto_front.csv")
         pareto_df.to_csv(pareto_path, index=False)
 
-        # Save problem configuration (unchanged)
         config = {
             "startTime": problem.startTime,
             "endTime": problem.endTime,

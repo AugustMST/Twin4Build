@@ -18,7 +18,6 @@ def get_signature_pattern():
     sp.add_edge(Exact(object=node1, subject=node2, predicate="observes"))
     sp.add_edge(Exact(object=node0, subject=node3, predicate="hasProfile"))
     sp.add_input("actualValue", node1, "measuredValue")
-    sp.add_input("setpointValue", node3, "scheduleValue")
     sp.add_modeled_node(node0)
     return sp
 
@@ -34,7 +33,6 @@ class SuppliedAirTemperatureRBC(RulebasedController):
         # Define inputs and outputs
         self.input = {
             "actualValue": tps.Scalar(),
-            "setpointValue": tps.Scalar()
         }
         self.onValue = 24
         self.offValue = 21
@@ -65,14 +63,8 @@ class SuppliedAirTemperatureRBC(RulebasedController):
         pass
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
-
-        # Check if we are within the 6:00 to 19:00 time range
-        if dateTime is not None:
-            current_hour = dateTime.hour
-            if 6 <= current_hour < 19:
-                    try:
-                        if self.passiveValue == None:
-                            self.passiveValue = self.offValue
-                        self.output["inputSignal"].set(self.passiveValue)
-                    except Exception as e:
-                        self.output["inputSignal"].set(self.offValue)
+        current_hour = dateTime.hour
+        if 6 <= current_hour < 19:
+            self.output["inputSignal"].set(self.onValue)
+        else:
+            self.output["inputSignal"].set(self.offValue)

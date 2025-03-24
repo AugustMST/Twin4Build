@@ -19,7 +19,6 @@ def get_signature_pattern():
     node3 = Node(cls=(base.Property,), id="<Property\nn<SUB>4</SUB>>")
 
     node5 = Node(cls=(base.Schedule,), id="<Schedule\nn<SUB>6</SUB>>")
-    node6 = Node(cls=(base.Schedule,), id="<Schedule\nn<SUB>7</SUB>>")
     node7 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>8</SUB>>")
     node8 = Node(cls=(base.Sensor,), id="<Sensor\nn<SUB>9</SUB>>")
     node9 = Node(cls=(base.Property,), id="<Property\nn<SUB>10</SUB>>")
@@ -106,9 +105,9 @@ class SequenceControllerPIRBCSystem(base.Controller):
 
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
-
         self.rulebased_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
+
+        self.setpoint_controller.input["actualValue"].set(self.input["actualValueSetpointController"])
         self.setpoint_controller.input["setpointValue"].set(next(iter(self.rulebased_controller.output.values())))
         self.setpoint_controller.do_step(secondTime=secondTime, dateTime=dateTime, stepSize=stepSize)
-
         self.output["inputSignal"].set(next(iter(self.setpoint_controller.output.values())))

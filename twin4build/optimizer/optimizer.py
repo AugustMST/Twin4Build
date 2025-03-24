@@ -77,9 +77,11 @@ def custom_sampling(initial_solution, problem, n_samples):
     return X
 
 class OptimizationProblem(Problem):
-    def __init__(self, model, evaluator, startTime, endTime, stepSize, controllers, 
-                 setpoints_per_controller, measuring_devices, objectives_to_include, 
-                 gene_space, setpoint_interval, electricity_prices, heating_prices, num_cores=4):
+    def __init__(self, model, evaluator, startTime, endTime, stepSize, 
+                 controllers, setpoints_per_controller, schedules, schedule_params_per_schedule,
+                 measuring_devices, objectives_to_include, gene_space, setpoint_interval, 
+                 electricity_prices, heating_prices, optimize_time_slots=True, 
+                 fixed_time_slots=None, num_cores=4):
         self.model = model
         self.evaluator = evaluator
         self.startTime = startTime
@@ -87,25 +89,45 @@ class OptimizationProblem(Problem):
         self.stepSize = stepSize
         self.controllers = controllers
         self.setpoints_per_controller = setpoints_per_controller
+        self.schedules = schedules
+        self.schedule_params_per_schedule = schedule_params_per_schedule
         self.measuring_devices = measuring_devices
         self.objectives_to_include = objectives_to_include
         self.electricity_prices = electricity_prices
         self.heating_prices = heating_prices
         self.setpoint_interval = setpoint_interval
+        self.optimize_time_slots = optimize_time_slots
+        self.fixed_time_slots = fixed_time_slots or []
         self.num_cores = num_cores
         self.gene_space = gene_space
 
-        n_var = sum(len(gs) for gs in gene_space)
+        # Total number of variables
+        n_var_controllers = sum(len(gs) for gs in gene_space[:len(controllers)])
+        n_var_schedules = sum(len(gs) for gs in gene_space[len(controllers):])
+        n_var = n_var_controllers + n_var_schedules
+
+        # Define bounds
         xl = np.array([min(g) for group in gene_space for g in group])
         xu = np.array([max(g) for group in gene_space for g in group])
 
+        if len(xl) != n_var or len(setpoint_interval) != len(controllers) + len(schedules):
+            raise ValueError(f"Mismatch: n_var={n_var}, len(xl)={len(xl)}, len(setpoint_interval)={len(setpoint_interval)}")
+
         self.discrete_options = []
         gene_index = 0
+        # Controller setpoints
         for ctrl_idx, setpoints in enumerate(setpoints_per_controller):
-            interval = setpoint_interval[ctrl_idx]
+            interval = setpoint_interval[ctrl_idx]  # One interval per controller
             for _ in setpoints:
-                start = xl[gene_index]
-                stop = xu[gene_index]
+                start, stop = xl[gene_index], xu[gene_index]
+                options = list(frange(start, stop, interval))
+                self.discrete_options.append(options)
+                gene_index += 1
+        # Schedule parameters
+        for sched_idx, params in enumerate(schedule_params_per_schedule):
+            interval = setpoint_interval[len(controllers) + sched_idx]  # One interval per schedule
+            for _ in params:
+                start, stop = xl[gene_index], xu[gene_index]
                 options = list(frange(start, stop, interval))
                 self.discrete_options.append(options)
                 gene_index += 1
@@ -121,7 +143,7 @@ class OptimizationProblem(Problem):
             xu=self.xu,
             elementwise_evaluation=False
         )
-
+        
     def map_to_discrete(self, design):
         return np.array([self.discrete_options[i][int(d)] for i, d in enumerate(design)])
 
@@ -129,6 +151,8 @@ class OptimizationProblem(Problem):
         try:
             discretized_design = self.map_to_discrete(design)
             gene_index = 0
+
+            # Apply controller setpoints
             for ctrl_idx, controller_name in enumerate(self.controllers):
                 controller = self.model.component_dict[controller_name]
                 for setpoint_name in self.setpoints_per_controller[ctrl_idx]:
@@ -136,6 +160,55 @@ class OptimizationProblem(Problem):
                     rsetattr(controller, setpoint_name, value)
                     gene_index += 1
 
+            # Apply schedule parameters
+            for sched_idx, schedule_name in enumerate(self.schedules):
+                schedule = self.model.component_dict[schedule_name]
+                schedule.useFile = False
+                params = self.schedule_params_per_schedule[sched_idx]
+                num_slots = (len(params) - 1) // (3 if self.optimize_time_slots else 1)  # 3 params (start, end, value) or 1 (value) per slot
+
+                default_value = discretized_design[gene_index]
+                gene_index += 1
+
+                if self.optimize_time_slots:
+                    start_hours = []
+                    end_hours = []
+                    values = []
+                    for slot in range(num_slots):
+                        start_hour = discretized_design[gene_index]
+                        gene_index += 1
+                        end_hour = discretized_design[gene_index]
+                        gene_index += 1
+                        value = discretized_design[gene_index]
+                        gene_index += 1
+
+                        if end_hour <= start_hour:
+                            end_hour = min(start_hour + 1, self.discrete_options[gene_index-1][-1])
+
+                        start_hours.append(start_hour)
+                        end_hours.append(end_hour)
+                        values.append(value)
+                else:
+                    # Use fixed time slots
+                    fixed_slots = self.fixed_time_slots[sched_idx] if sched_idx < len(self.fixed_time_slots) else {}
+                    start_hours = fixed_slots.get("start_hours", [6, 12, 16])[:num_slots]
+                    end_hours = fixed_slots.get("end_hours", [8, 14, 18])[:num_slots]
+                    values = []
+                    for slot in range(num_slots):
+                        value = discretized_design[gene_index]
+                        gene_index += 1
+                        values.append(value)
+
+                schedule.weekDayRulesetDict = {
+                    "ruleset_default_value": default_value,
+                    "ruleset_start_minute": [0] * num_slots,
+                    "ruleset_end_minute": [0] * num_slots,
+                    "ruleset_start_hour": start_hours,
+                    "ruleset_end_hour": end_hours,
+                    "ruleset_value": values
+                }
+
+            # Evaluate the model
             results_dict = self.evaluator.evaluate(
                 startTime=self.startTime,
                 endTime=self.endTime,
@@ -144,7 +217,7 @@ class OptimizationProblem(Problem):
                 measuring_devices=self.measuring_devices,
                 evaluation_metrics=["T"] * len(self.measuring_devices),
                 method="optimize",
-                initialization_period = 144,
+                initialization_period=144,
                 electricity_prices=self.electricity_prices,
                 heating_prices=self.heating_prices
             )
@@ -370,3 +443,33 @@ class Optimizer:
         print(f"Saved convergence history to {history_path}")
 
         return discrete_X, res.F
+
+    def apply_design_to_model(self, model, controllers, setpoints_per_controller, 
+                            schedules, schedule_params_per_schedule, discrete_design):
+        gene_index = 0
+        # Apply controller setpoints
+        for ctrl_idx, controller_name in enumerate(controllers):
+            controller = model.component_dict[controller_name]
+            for setpoint_name in setpoints_per_controller[ctrl_idx]:
+                value = discrete_design[gene_index]
+                rsetattr(controller, setpoint_name, value)
+                gene_index += 1
+
+        # Apply schedule parameters
+        for sched_idx, schedule_name in enumerate(schedules):
+            schedule = model.component_dict[schedule_name]
+            schedule.useFile = False
+            params = schedule_params_per_schedule[sched_idx]
+            default_value = discrete_design[gene_index]
+            gene_index += 1
+            ruleset_values = [discrete_design[gene_index + i] for i in range(len(params) - 1)]
+            gene_index += len(params) - 1
+
+            schedule.weekDayRulesetDict = {
+                "ruleset_default_value": default_value,
+                "ruleset_start_minute": [0] * len(ruleset_values),
+                "ruleset_end_minute": [0] * len(ruleset_values),
+                "ruleset_start_hour": [6, 7, 8, 12, 14, 16, 18][:len(ruleset_values)],
+                "ruleset_end_hour": [7, 8, 12, 14, 16, 18, 22][:len(ruleset_values)],
+                "ruleset_value": ruleset_values
+            }

@@ -2,7 +2,7 @@ from tabnanny import check
 import twin4build.base as base
 from twin4build.utils.uppath import uppath
 import twin4build.utils.input_output_types as tps
-from twin4build.utils.signature_pattern.signature_pattern import SignaturePattern, Node, Exact
+from twin4build.utils.signature_pattern.signature_pattern import Optional, SignaturePattern, Node, Exact
 from twin4build.base import RulebasedController
 
 
@@ -12,6 +12,7 @@ def get_signature_pattern():
     node2 = Node(cls=(base.BuildingSpace,), id="<BuildingSpace\nn<SUB>3</SUB>>")
     node3 = Node(cls=(base.Peer), id="<PeerProperty\nn<SUB>4</SUB>>")
     node4 = Node(cls=(base.OpeningPosition), id="<ValvePosition\nn<SUB>4</SUB>>")
+    node5 = Node(cls=(base.Schedule), id="<OccupancySchedule\nn<SUB>4</SUB>>")
 
     sp = SignaturePattern(ownedBy="PeerHeatingSetpointController", priority=500)
 
@@ -20,8 +21,10 @@ def get_signature_pattern():
     sp.add_edge(Exact(object=node0, subject=node2, predicate="isContainedIn"))
     sp.add_edge(Exact(object=node2, subject=node3, predicate="hasProperty"))
     sp.add_edge(Exact(object=node0, subject=node4, predicate="controls"))
+    sp.add_edge(Optional(object=node0, subject=node5, predicate="hasProfile"))
 
     sp.add_input("peerBinaryValue", node1, "measuredValue")
+    sp.add_input("setpointValue", node5, "scheduleValue")
 
     sp.add_modeled_node(node0)
     return sp
@@ -34,6 +37,7 @@ class HeatingSetpointPeerController(RulebasedController):
         # Define inputs and outputs
         self.input = {
             "peerBinaryValue": tps.Scalar(),
+            "setpointValue": tps.Scalar()
             #"supplyDamperPosition": tps.Scalar()
         }
         self.onValue = 24
@@ -65,20 +69,6 @@ class HeatingSetpointPeerController(RulebasedController):
         '''
         pass
 
-    # def do_step(self, secondTime=None, dateTime=None, stepSize=None):
-    #     """Apply control logic at each step."""
-    #     # Retrieve inputs
-    #     peerBinaryValue = self.input["peerBinaryValue"].get()
-    #     #supply_damper_position = self.input["supplyDamperPosition"].get()
-
-    #     if (
-    #         peerBinaryValue > 0
-    #     ):
-    #         self.output["inputSignal"].set(self.onValue)
-    #     else:
-    #         # self.output["inputSignal"].set(supply_damper_position)
-    #         self.output["inputSignal"].set(self.offValue)
-
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
 
         # Retrieve inputs
@@ -99,7 +89,7 @@ class HeatingSetpointPeerController(RulebasedController):
                         self.output["inputSignal"].set(self.passiveValue)
                     except Exception as e:
                         self.output["inputSignal"].set(self.offValue)
-                return  # Exit the function after applying the time-specific logic
+                return
 
         # If outside 6:00-19:00, or no valid dateTime is provided
         if peerBinaryValue > 0:

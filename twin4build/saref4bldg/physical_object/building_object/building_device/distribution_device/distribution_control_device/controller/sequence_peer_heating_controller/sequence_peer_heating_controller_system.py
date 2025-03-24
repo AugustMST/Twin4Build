@@ -99,7 +99,6 @@ class SequencePeerHeatingControllerSystem(base.Controller):
             rsetattr(self.rulebased_controller, attr, rgetattr(self, new_attr))
 
         self.setpoint_controller.input["actualValue"] = self.input["actualValueSetpointController"]
-        #self.setpoint_controller.input["setpointValue"] = self.input["heatSetpointValue"]
         self.rulebased_controller.input["peerBinaryValue"] = self.input["peerBinaryValue"]
         
         self.setpoint_controller.output = self.output.copy()

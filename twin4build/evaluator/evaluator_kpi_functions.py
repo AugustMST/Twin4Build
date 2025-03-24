@@ -24,6 +24,7 @@ from twin4build.saref.property_.Co2.Co2 import Co2
 from twin4build.saref.property_.power.power import Power
 from twin4build.saref.property_.opening_position.opening_position import OpeningPosition #This is in use
 from twin4build.saref.property_.energy.energy import Energy #This is in use
+from twin4build.saref.property_.peer.peer import Peer
 from twin4build.model.model import Model
 from twin4build.saref4bldg.building_space.building_space import BuildingSpace
 
@@ -72,7 +73,7 @@ def powerCost_kpi_function(kpi, electricity_prices, evaluation_metric):
     return kpi
 
 def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model):
-    IDEAL_CO2_LEVEL = 900
+    IDEAL_CO2_LEVEL = 500
     ideal_co2_level = IDEAL_CO2_LEVEL
 
     # Initialize a DataFrame to hold the discomfort calculations
@@ -101,16 +102,26 @@ def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric
 
     space = model.component_dict[modeled_space.id]
 
-    try:
-        occupancy_threshold = space.occupancyThreshold
-    except AttributeError:  # If 'space' doesn't have 'occupancy_threshold'
-        occupancy_threshold = 0.5
-        print(f"AttributeError: '{space.id}' object has no attribute 'occupancy_threshold', assigning default value.")
-    except Exception as e:  # Catch any other unexpected errors
-        occupancy_threshold = 0.5
-        print(f"An unexpected error occurred: {e}. Assigning default value.")
+    list_of_measuring_devices = space.contains
 
-    filtered_df['is_occupied'] = filtered_df["occupancy_value"] > occupancy_threshold
+    for component in list_of_measuring_devices:
+        
+        if isinstance(component, Sensor):
+            if isinstance(component.observes[0], Peer):
+                filtered_df["occupancy_value"] = df_simulation_readings[component.id]
+                break
+
+    # try:
+    #     occupancy_threshold = space.occupancyThreshold
+    # except AttributeError:  # If 'space' doesn't have 'occupancy_threshold'
+    #     occupancy_threshold = 0.5
+    #     print(f"AttributeError: '{space.id}' object has no attribute 'occupancy_threshold', assigning default value.")
+    # except Exception as e:  # Catch any other unexpected errors
+    #     occupancy_threshold = 0.5
+    #     print(f"An unexpected error occurred: {e}. Assigning default value.")
+
+    #filtered_df['is_occupied'] = filtered_df["occupancy_value"] > occupancy_threshold
+    filtered_df['is_occupied'] = filtered_df["occupancy_value"]
     
     # Calculate dt only for occupied times
     dt = filtered_df['is_occupied'] * filtered_df.index.to_series().diff().dt.total_seconds() / 3600
@@ -183,6 +194,14 @@ def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metri
 
     filtered_df["occupancy_value"] = occupancy_schedule_values
 
+    list_of_measuring_devices = space.contains
+
+    for component in list_of_measuring_devices:
+        
+        if isinstance(component, Sensor):
+            if isinstance(component.observes[0], Peer):
+                filtered_df["occupancy_value"] = df_simulation_readings[component.id]
+                break
     try:
         ideal_level = space_id.occupantComfort
     except AttributeError:
@@ -192,17 +211,17 @@ def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metri
         ideal_level = 22
         print(f"An unexpected error occurred: {e}. Assigning default value.")
 
-    try:
-        occupancy_threshold = space_id.occupancyThreshold
-    except AttributeError:  # If 'space' doesn't have 'occupancy_threshold'
-        occupancy_threshold = 0.5
-        print(f"AttributeError: '{space_id.id}' object has no attribute 'occupancy_threshold', assigning default value.")
-    except Exception as e:  # Catch any other unexpected errors
-        occupancy_threshold = 0.5
-        print(f"An unexpected error occurred: {e}. Assigning default value.")
+    # try:
+    #     occupancy_threshold = space_id.occupancyThreshold
+    # except AttributeError:  # If 'space' doesn't have 'occupancy_threshold'
+    #     occupancy_threshold = 0.5
+    #     print(f"AttributeError: '{space_id.id}' object has no attribute 'occupancy_threshold', assigning default value.")
+    # except Exception as e:  # Catch any other unexpected errors
+    #     occupancy_threshold = 0.5
+    #     print(f"An unexpected error occurred: {e}. Assigning default value.")
 
-    # Check occupancy status
-    filtered_df['is_occupied'] = filtered_df["occupancy_value"] > occupancy_threshold
+    # # Check occupancy status
+    filtered_df['is_occupied'] = filtered_df["occupancy_value"]
 
     # Calculate time difference in hours for occupied periods
     dt = filtered_df['is_occupied'] * filtered_df.index.to_series().diff().dt.total_seconds() / 3600

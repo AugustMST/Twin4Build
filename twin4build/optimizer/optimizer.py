@@ -445,8 +445,11 @@ class Optimizer:
         return discrete_X, res.F
 
     def apply_design_to_model(self, model, controllers, setpoints_per_controller, 
-                            schedules, schedule_params_per_schedule, discrete_design):
+                          schedules, schedule_params_per_schedule, discrete_design, 
+                          optimize_time_slots=True, fixed_time_slots=None):
+        
         gene_index = 0
+
         # Apply controller setpoints
         for ctrl_idx, controller_name in enumerate(controllers):
             controller = model.component_dict[controller_name]
@@ -460,16 +463,47 @@ class Optimizer:
             schedule = model.component_dict[schedule_name]
             schedule.useFile = False
             params = schedule_params_per_schedule[sched_idx]
+            if isinstance(params, list):
+                params = len(params)
+            num_slots = (params - 1) // (3 if optimize_time_slots else 1)  # 3 params (start, end, value) or 1 (value) per slot
+
             default_value = discrete_design[gene_index]
             gene_index += 1
-            ruleset_values = [discrete_design[gene_index + i] for i in range(len(params) - 1)]
-            gene_index += len(params) - 1
 
+            if optimize_time_slots:
+                start_hours = []
+                end_hours = []
+                values = []
+                for slot in range(num_slots):
+                    start_hour = discrete_design[gene_index]
+                    gene_index += 1
+                    end_hour = discrete_design[gene_index]
+                    gene_index += 1
+                    value = discrete_design[gene_index]
+                    gene_index += 1
+
+                    if end_hour <= start_hour:
+                        end_hour = min(start_hour + 1, discrete_design[gene_index-1][-1])
+
+                    start_hours.append(start_hour)
+                    end_hours.append(end_hour)
+                    values.append(value)
+            else:
+                # Use fixed time slots
+                fixed_slots = fixed_time_slots[sched_idx] if sched_idx < len(fixed_time_slots) else {}
+                start_hours = fixed_slots.get("start_hours", [6, 12, 16])[:num_slots]
+                end_hours = fixed_slots.get("end_hours", [8, 14, 18])[:num_slots]
+                values = []
+                for slot in range(num_slots):
+                    value = discrete_design[gene_index]
+                    gene_index += 1
+                    values.append(value)
+                    
             schedule.weekDayRulesetDict = {
                 "ruleset_default_value": default_value,
-                "ruleset_start_minute": [0] * len(ruleset_values),
-                "ruleset_end_minute": [0] * len(ruleset_values),
-                "ruleset_start_hour": [6, 7, 8, 12, 14, 16, 18][:len(ruleset_values)],
-                "ruleset_end_hour": [7, 8, 12, 14, 16, 18, 22][:len(ruleset_values)],
-                "ruleset_value": ruleset_values
+                "ruleset_start_minute": [0] * num_slots,
+                "ruleset_end_minute": [0] * num_slots,
+                "ruleset_start_hour": start_hours,
+                "ruleset_end_hour": end_hours,
+                "ruleset_value": values
             }

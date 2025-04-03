@@ -6,7 +6,7 @@ from twin4build.utils.signature_pattern.signature_pattern import SignaturePatter
 import twin4build.base as base
 from twin4build.utils.time_series_input import TimeSeriesInputSystem
 import twin4build.utils.input_output_types as tps
-
+from datetime import datetime, timedelta
 
 def get_signature_pattern():
     node0 = Node(cls=(base.Schedule,), id="<Schedule<SUB>1</SUB>>")
@@ -42,6 +42,7 @@ class ScheduleSystem(base.Schedule, System):
                 parameterize_weekDayRulesetDict=False,
                 useFile=False,
                 filename=None,
+                forecastingTime=0,
                 **kwargs):
         super().__init__(**kwargs)
         self.weekDayRulesetDict = weekDayRulesetDict
@@ -59,6 +60,7 @@ class ScheduleSystem(base.Schedule, System):
         self.filename = filename
         self.datecolumn = 0
         self.valuecolumn = 1
+        self.forecastingTime = forecastingTime
         random.seed(0)
         self.input = {}
         self.output = {"scheduleValue": tps.Scalar()}
@@ -73,7 +75,8 @@ class ScheduleSystem(base.Schedule, System):
                                         "sundayRulesetDict",
                                         "add_noise",
                                         "parameterize_weekDayRulesetDict",
-                                        "useFile"],
+                                        "useFile",
+                                        "forecastingTime"],
                         "readings": {"filename": self.filename,
                                      "datecolumn": self.datecolumn,
                                      "valuecolumn": self.valuecolumn}}
@@ -242,5 +245,6 @@ class ScheduleSystem(base.Schedule, System):
             self.output = self.do_step_instance.output
         else:
             self.output["scheduleValue"].set(self.get_schedule_value(dateTime))
+
 
         

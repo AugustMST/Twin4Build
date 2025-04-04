@@ -238,6 +238,7 @@ class OptimizationProblem(Problem):
                 "consumption": total_consumption,
                 "cost": total_cost
             }
+            
 
             return [all_objectives[obj] for obj in self.objectives_to_include]
         except FMICallException as e:

@@ -73,7 +73,7 @@ def powerCost_kpi_function(kpi, electricity_prices, evaluation_metric):
     return kpi
 
 def CO2_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model):
-    IDEAL_CO2_LEVEL = 500
+    IDEAL_CO2_LEVEL = 900
     ideal_co2_level = IDEAL_CO2_LEVEL
 
     # Initialize a DataFrame to hold the discomfort calculations
@@ -544,11 +544,11 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
 
             # Calculate number of rows and columns (2 columns)
             n_columns = 2
-            n_rows = (len(filtered_columns) + 1) // 2  # Calculate rows based on number of columns
+            n_rows = (len(filtered_columns) + 1) // 2
 
             # Set A4 size dimensions (in inches)
-            fig_width = 8.27  # A4 width in inches
-            fig_height = 11.7  # A4 height in inches
+            fig_width = 8.27
+            fig_height = 11.7
 
             # Create subplots with 2 columns and adjust the figure size to A4 dimensions
             fig, axes = plt.subplots(n_rows, n_columns, figsize=(fig_width, fig_height), sharex=True)
@@ -561,11 +561,14 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
             lines = []
             labels = []
 
-            new_column_names = ["Space_01 Temperature Sensor", "Space_03 Temperature Sensor" ,"Space_04 Temperature Sensor","Space_05 Temperature Sensor",
-                                "Space_06 Temperature Sensor","Space_07 Temperature Sensor","Space_08 Temperature Sensor","Space_09 Temperature Sensor",
-                                "Space_10 Temperature Sensor","Space_11 Temperature Sensor","Space_12 Temperature Sensor",]
+            new_column_names = [
+                "Space_01 Temperature Sensor", "Space_03 Temperature Sensor", "Space_04 Temperature Sensor",
+                "Space_05 Temperature Sensor", "Space_06 Temperature Sensor", "Space_07 Temperature Sensor",
+                "Space_08 Temperature Sensor", "Space_09 Temperature Sensor", "Space_10 Temperature Sensor",
+                "Space_11 Temperature Sensor", "Space_12 Temperature Sensor",
+            ]
 
-            subplot_labels = [f"({chr(97 + i)})" for i in range(len(filtered_columns))]  # Generates ['(a)', '(b)', '(c)', ...]
+            subplot_labels = [f"({chr(97 + i)})" for i in range(len(filtered_columns))]
 
             for i, column in enumerate(filtered_columns):
                 ax = axes[i]
@@ -587,21 +590,44 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                         labels.append(model_label)
                     else:
                         ax.plot(df.index, df[column])
-                    
-                    # Retrieve occupancy schedule values
+
+                    # Retrieve occupancy values
                     space = model.component_dict[column].isContainedIn
                     modeled_space = model.instance_map_reversed[space]
-                    schedule = space.hasProfile
-                    modeled_schedule = model.instance_map_reversed[schedule]
-                    occupancy_schedule_values = modeled_schedule.savedOutput["scheduleValue"]
                     space_id = model.component_dict[modeled_space.id]
+                    list_of_measuring_devices = space.contains
 
-                    # Align occupancy values with the data
-                    difference = len(occupancy_schedule_values) - len(df)
-                    if difference > 0:
-                        occupancy_schedule_values = occupancy_schedule_values[difference:]
+                    # Check for sensor-based occupancy
+                    occupancy_values = None
+                    for component in list_of_measuring_devices:
+                        if isinstance(component, Sensor) and isinstance(component.observes[0], Peer):
+                            if component.id in df.columns:
+                                occupancy_values = df[component.id]
+                                print(component.id)
+                                break
 
-                    is_occupied = np.array(occupancy_schedule_values) > space_id.occupancyThreshold
+                    # Fall back to schedule-based occupancy if no sensor found
+                    if occupancy_values is None:
+                        schedule = space.hasProfile
+                        modeled_schedule = model.instance_map_reversed[schedule]
+                        occupancy_schedule_values = modeled_schedule.savedOutput["scheduleValue"]
+                        difference = len(occupancy_schedule_values) - len(df)
+                        if difference > 0:
+                            occupancy_schedule_values = occupancy_schedule_values[difference:]
+                        occupancy_values = pd.Series(occupancy_schedule_values, index=df.index)
+
+                    # Determine occupancy threshold
+                    try:
+                        occupancy_threshold = space_id.occupancyThreshold
+                    except AttributeError:
+                        occupancy_threshold = 0.5
+                        print(f"AttributeError: '{space_id.id}' object has no attribute 'occupancyThreshold', assigning default value.")
+                    except Exception as e:
+                        occupancy_threshold = 0.5
+                        print(f"An unexpected error occurred: {e}. Assigning default value.")
+
+                    # Determine occupancy status
+                    is_occupied = occupancy_values > occupancy_threshold
 
                     # Count True and False values
                     num_true = np.sum(is_occupied)
@@ -619,7 +645,7 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                     ax.fill_between(
                         df.index,
                         0,
-                        300,  # Assuming 300 is the upper bound for shading
+                        300,
                         where=is_occupied,
                         color='gray',
                         alpha=0.3,
@@ -627,8 +653,6 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                         label='Occupied'
                     )
 
-                    #ax.set_title(f'{column}', fontsize=9)
-                    ax.set_title(new_column_names[i], fontsize=9)
                     ax.set_ylabel('Degree Celsius', fontsize=7)
                     ax.tick_params(axis='x', rotation=45)
 
@@ -644,7 +668,7 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                         alpha=0.2
                     )
 
-                # Ensure temperature-related y-axis is between 18 and 25
+                # Ensure temperature-related y-axis is between 19 and 25
                 if isinstance(model.component_dict[column].observes[0], Temperature):
                     ax.set_ylim(19, 25)
 
@@ -652,8 +676,6 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
             for j in range(len(filtered_columns), len(axes)):
                 fig.delaxes(axes[j])
 
-            # Add a single legend outside the plot
-            # fig.legend(lines, labels, loc='lower center', fontsize=8, ncol=8)
             # Define handles for custom legend items
             red_stippled_line = mlines.Line2D([], [], color='red', linestyle='--', label='Minimum Temperature')
             gray_shading = mpatches.Patch(color='gray', alpha=0.3, label='PIR Sensor Active')
@@ -661,20 +683,19 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
 
             # Add custom legend items
             fig.legend(
-                handles=lines + [red_stippled_line, gray_shading, red_shading],  # Include existing model lines + new items
-                labels=labels + ['Minimum Temperature', 'PIR Sensor Active', "Heating Deadband"],
+                handles=lines + [red_stippled_line, gray_shading, red_shading],
+                labels=labels + ['Minimum Temperature', 'PIR Sensor Active', 'Heating Deadband'],
                 loc='lower center',
                 fontsize=8,
-                ncol=4  # Adjust column count to fit
-)
+                ncol=4
+            )
 
             # Adjust layout to ensure everything fits properly on the A4 page
-            plt.tight_layout(pad=2.0)  # Add some padding to ensure nothing is cut off
+            plt.tight_layout(pad=2.0)
 
             # Save the plot to a file (A4 size)
             plt.savefig("temperature_subplot_A4.png", dpi=300, bbox_inches='tight')
             plt.show()
-
 
 
 def plot_comparison(models, dataframe_result_dict, plot_mode="comparison"):

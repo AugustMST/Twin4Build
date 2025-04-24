@@ -32,7 +32,10 @@ def get_signature_pattern():
 
 class HeatingSetpointPeerController(RulebasedController):
     sp = [get_signature_pattern()]
-    def __init__(self, **kwargs):
+    def __init__(self, 
+                 passiveStartTime = 6, 
+                 passiveEndTime = 19,
+                 **kwargs):
         super().__init__(**kwargs)
         # Define inputs and outputs
         self.input = {
@@ -44,8 +47,8 @@ class HeatingSetpointPeerController(RulebasedController):
         self.passiveValue = None
         self.offValue = 21
         self.stepCounter = 0
-        self.passiveStartTime = 6
-        self.passiveEndTime = 19
+        self.passiveStartTime = passiveStartTime
+        self.passiveEndTime = passiveEndTime
         self.output = {"inputSignal": tps.Scalar()}
         self.isReverse = False
         self._config = {"parameters": ["onValue", "passiveValue", "offValue", "passiveStartTime", "passiveEndTime"]}

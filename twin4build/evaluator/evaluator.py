@@ -123,7 +123,6 @@ class Evaluator:
 
             if electricity_prices is not None and isinstance(property_.isPropertyOf, Fan):
                 kpi = power_kpi_function(df_simulation_readings, measuring_device, "H")
-                print(kpi)
                 cost_kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
                 filtered_df = cost_kpi
 

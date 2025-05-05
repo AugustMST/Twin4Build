@@ -254,14 +254,18 @@ class OptimizationProblem(Problem):
     def close(self):
         pass
 
+from datetime import datetime
+
 class HistoryCallback(Callback):
-    def __init__(self, save_dir=("generated_files/NSGA/results")):
+    def __init__(self, save_dir="generated_files/NSGA/results"):
         super().__init__()
         self.history = []
         self.save_dir = save_dir
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        self.csv_path = os.path.join(self.save_dir, "pareto_front.csv")
+        # Generate timestamp for the filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.csv_path = os.path.join(self.save_dir, f"pareto_front_{timestamp}.csv")
         # Initialize an empty DataFrame with headers to be set later
         self.pareto_df = None
         self.generation = 1  # Track the generation number

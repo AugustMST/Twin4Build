@@ -62,13 +62,11 @@ def powerCost_kpi_function(kpi, electricity_prices, evaluation_metric):
 
     # Now calculate cost
     filtered_df['cost'] = filtered_df['power_readings'] * filtered_df['electricity_price']
-
     # if evaluation_metric == "T":
     #     filtered_df["cost"] = filtered_df["cost"].cumsum()
     #     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
     # else:
     #filtered_df = filtered_df.resample(f'1{evaluation_metric}')
-    kpi = filtered_df[["cost"]]
     
     return kpi
 
@@ -251,6 +249,112 @@ def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metri
     kpi = filtered_df[["discomfort"]]
 
     return kpi
+
+# def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model, absolute=True):
+#     cooling_setpoint = 25
+#     print(f"Processing measuring_device: {measuring_device}")
+#     print(f"df_simulation_readings columns: {df_simulation_readings.columns}")
+    
+#     # Check if measuring_device exists in df_simulation_readings
+#     if measuring_device not in df_simulation_readings.columns:
+#         print(f"Error: {measuring_device} not found in df_simulation_readings")
+#         return pd.DataFrame({"discomfort": [0.0]}, index=["Total"])
+    
+#     # Initialize filtered_df
+#     filtered_df = pd.DataFrame()
+#     filtered_df.insert(0, "time", df_simulation_readings.index)
+#     filtered_df.insert(1, "temp_readings", df_simulation_readings[measuring_device].values)
+#     filtered_df.set_index("time", inplace=True)
+    
+#     print(f"Initial filtered_df shape: {filtered_df.shape}")
+#     if filtered_df["temp_readings"].isna().all():
+#         print(f"Warning: temp_readings for {measuring_device} are all NaN")
+#         return pd.DataFrame({"discomfort": [0.0]}, index=["Total"])
+    
+#     # Retrieve space and schedule
+#     try:
+#         space = model.component_dict[measuring_device].isContainedIn
+#         modeled_space = model.instance_map_reversed[space]
+#         space_id = model.component_dict[modeled_space.id]
+#         schedule = space.hasProfile
+#         modeled_schedule = model.instance_map_reversed[schedule]
+#         occupancy_schedule_values = modeled_schedule.savedOutput["scheduleValue"]
+#     except KeyError as e:
+#         print(f"KeyError: {e} while accessing model components for {measuring_device}")
+#         return pd.DataFrame({"discomfort": [0.0]}, index=["Total"])
+    
+#     # Align occupancy schedule
+#     difference = len(occupancy_schedule_values) - len(df_simulation_readings)
+#     if difference < 0:
+#         print(f"Warning: occupancy_schedule_values shorter than df_simulation_readings for {measuring_device}")
+#         return pd.DataFrame({"discomfort": [0.0]}, index=["Total"])
+    
+#     occupancy_schedule_values = occupancy_schedule_values[difference:]
+#     filtered_df["occupancy_value"] = occupancy_schedule_values
+    
+#     print(f"Occupancy values length: {len(occupancy_schedule_values)}")
+    
+#     # Override with Peer sensor if available
+#     list_of_measuring_devices = space.contains
+#     for component in list_of_measuring_devices:
+#         if isinstance(component, Sensor):
+#             if isinstance(component.observes[0], Peer):
+#                 if component.id in df_simulation_readings.columns:
+#                     filtered_df["occupancy_value"] = df_simulation_readings[component.id]
+#                     print(f"Using Peer sensor {component.id} for occupancy")
+#                     break
+#                 else:
+#                     print(f"Warning: Peer sensor {component.id} not in df_simulation_readings")
+    
+#     # Set ideal level
+#     try:
+#         ideal_level = space_id.occupantComfort
+#     except AttributeError:
+#         ideal_level = 22
+#         print(f"AttributeError: '{space_id.id}' object has no attribute 'occupantComfort', assigning default value.")
+    
+#     # Check occupancy status
+#     filtered_df['is_occupied'] = filtered_df["occupancy_value"]
+#     print(f"is_occupied sum: {filtered_df['is_occupied'].sum()}")
+    
+#     if filtered_df['is_occupied'].sum() == 0:
+#         print(f"Warning: No occupied periods for {measuring_device}")
+#         return pd.DataFrame({"discomfort": [0.0]}, index=["Total"])
+    
+#     # Calculate time difference in hours
+#     dt = filtered_df['is_occupied'] * filtered_df.index.to_series().diff().dt.total_seconds() / 3600
+#     dt = dt.fillna(0)
+    
+#     # Compute discomfort
+#     if absolute or evaluation_metric == "T":
+#         filtered_df["discomfort"] = (
+#             abs((filtered_df["temp_readings"] - ideal_level)) * dt * (filtered_df["temp_readings"] < ideal_level)
+#         ) + (
+#             abs((filtered_df["temp_readings"] - cooling_setpoint)) * dt * (filtered_df["temp_readings"] > cooling_setpoint)
+#         )
+#     else:
+#         filtered_df["discomfort"] = (
+#             (filtered_df["temp_readings"] - ideal_level) * dt * (filtered_df["temp_readings"] < ideal_level)
+#         ) + (
+#             (filtered_df["temp_readings"] - cooling_setpoint) * dt * (filtered_df["temp_readings"] > cooling_setpoint)
+#         )
+    
+#     print(f"Discomfort sum: {filtered_df['discomfort'].sum()}")
+    
+#     # Resample and aggregate discomfort
+#     if evaluation_metric == "T":
+#         filtered_df["discomfort"] = filtered_df["discomfort"].cumsum()
+#         if filtered_df.empty:
+#             print(f"Warning: filtered_df is empty after cumsum for {measuring_device}")
+#             return pd.DataFrame({"discomfort": [0.0]}, index=["Total"])
+#         filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
+#     else:
+#         filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
+    
+#     kpi = filtered_df[["discomfort"]]
+#     print(f"Final KPI shape: {kpi.shape}")
+    
+#     return kpi
 
 
 def get_occupancy_df(df_simulation_readings, model, measuring_device):

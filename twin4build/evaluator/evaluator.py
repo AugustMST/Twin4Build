@@ -99,14 +99,13 @@ class Evaluator:
                 filtered_df = filtered_df.last() - filtered_df.first()
                 kpi = filtered_df[[measuring_device]].rename(columns={measuring_device: "energy"})
             kpi_dict["energy"] = kpi
+            
 
             if heating_prices is not None:
-                filtered_df = df_simulation_readings
                 filtered_df['heat_prices'] = heating_prices*len(filtered_df[measuring_device])
                 filtered_df['cost'] = filtered_df[measuring_device] * filtered_df['heat_prices']
-
+             
                 if evaluation_metric == "T":
-                    filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
                     filtered_df["cost"] = filtered_df["cost"].cumsum()
                     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 else:
@@ -124,11 +123,12 @@ class Evaluator:
 
             if electricity_prices is not None and isinstance(property_.isPropertyOf, Fan):
                 kpi = power_kpi_function(df_simulation_readings, measuring_device, "H")
+                print(kpi)
                 cost_kpi = powerCost_kpi_function(kpi, electricity_prices, evaluation_metric)
                 filtered_df = cost_kpi
 
                 if evaluation_metric == "T":
-                    filtered_df.loc[:, "cost"] = filtered_df["cost"].cumsum()
+                    filtered_df["cost"] = filtered_df["cost"].cumsum()
                     filtered_df = filtered_df.tail(n=1).set_index(pd.Index(["Total"]))
                 else:
                     filtered_df = filtered_df.resample(f'1{evaluation_metric}').sum()
@@ -464,10 +464,12 @@ class Evaluator:
                                         show_progress_bar = False)
                 df_simulation_readings = self.simulator.get_simulation_readings()
                 df_simulation_readings = df_simulation_readings.iloc[initialization_period:]
+                df_simulation_readings = df_simulation_readings.clip(lower=0)
 
                 for measuring_device, evaluation_metric in zip(measuring_devices, evaluation_metrics):
                     property_ = model.component_dict[measuring_device].observes[0]
                     property_type = type(property_)
+
 
                     kpi_dict = self.get_kpi(df_simulation_readings=df_simulation_readings,
                                             measuring_device=measuring_device,
@@ -481,11 +483,14 @@ class Evaluator:
                     if property_type is Power and "power" in kpi_dict:
                         kpi_dict["power"] = kpi_dict["power"] / 1000
 
-                    if property_type is Power and "cost" in kpi_dict:
-                        kpi_dict["cost"] = kpi_dict["cost"] / 1000
+                    if (property_type is Power and "cost" in kpi_dict) and isinstance(property_.isPropertyOf, Fan):
+                        kpi_dict["cost"] = kpi_dict["cost"]
+
+                    if (property_type is Power and "cost" in kpi_dict) and isinstance(property_.isPropertyOf, Coil):
+                        kpi_dict["cost"] = kpi_dict["cost"]/1000
 
                     if property_type is Energy and "cost" in kpi_dict:
-                        kpi_dict["cost"] = kpi_dict["cost"] / 1000
+                        kpi_dict["cost"] = kpi_dict["cost"]
 
                     # For each available KPI (energy, cost, etc.), update the sums
                     for kpi_name, kpi_df in kpi_dict.items():

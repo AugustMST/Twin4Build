@@ -86,6 +86,8 @@ class Evaluator:
         if isinstance(property_, Temperature):
             kpi = Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model, absolute=absolute)
             kpi_dict["temperature"] = kpi
+            kpi = average_temperature_function(df_simulation_readings, measuring_device)
+            kpi_dict["average_temperature"] = kpi
 
         elif isinstance(property_, Energy):
             if evaluation_metric == "T":
@@ -97,7 +99,7 @@ class Evaluator:
             else:
                 filtered_df = df_simulation_readings.resample(f'1{evaluation_metric}')
                 filtered_df = filtered_df.last() - filtered_df.first()
-                kpi = filtered_df[[measuring_device]].rename(columns={measuring_device: "energy"})
+                kpi = filtered_df[[measuring_device]]#.rename(columns={measuring_device: "energy"})
             kpi_dict["energy"] = kpi
             
 
@@ -147,12 +149,16 @@ class Evaluator:
 
                 kpi_dict["cost"] = filtered_df[["cost"]]
 
+
+
         # Return logic
         if return_type == "dict":
             return kpi_dict
         else:
             # Return only the primary KPI for backward compatibility
-            if "energy" in kpi_dict:
+            if "cost" in kpi_dict:
+                return kpi_dict["cost"]
+            elif "energy" in kpi_dict:
                 return kpi_dict["energy"]
             elif "power" in kpi_dict:
                 return kpi_dict["power"]
@@ -160,8 +166,6 @@ class Evaluator:
                 return kpi_dict["temperature"]
             elif "co2" in kpi_dict:
                 return kpi_dict["co2"]
-            elif "cost" in kpi_dict:
-                return kpi_dict["cost"]  # For Power/Coil, cost is primary if heating_prices are used
             else:
                 raise ValueError("No KPI computed for given property.")
 
@@ -522,7 +526,7 @@ class Evaluator:
                 self.simulator.simulate(model, stepSize=stepSize, startTime=startTime, endTime=endTime)
                 df_simulation_readings = self.simulator.get_simulation_readings()
 
-                rows_to_drop = 144
+                rows_to_drop = initialization_period
                 df_simulation_readings = df_simulation_readings.iloc[rows_to_drop:]
 
                 df_simulation_readings_list.append(df_simulation_readings)
@@ -549,14 +553,13 @@ class Evaluator:
                     # Compute KPI and update the DataFrame
                     for evaluation_metric in evaluation_metrics:
 
-                        kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric, model=model, property_=property_, absolute = absolute, electricity_prices=electricity_prices, heating_prices = heating_prices)
-                        
+                        kpi = self.get_kpi(df_simulation_readings, measuring_device, evaluation_metric="h", model=model, property_=property_, absolute = absolute, electricity_prices=electricity_prices, heating_prices = heating_prices, return_type="single")
                         if not pd.api.types.is_datetime64_any_dtype(kpi.index):
                             df = df.reindex(kpi.index)
 
-                        df[measuring_device] = kpi.iloc[:, 0]
-                    
-                    
+                        #df[measuring_device] = kpi.iloc[:, 0]
+                        df[measuring_device] = kpi
+                
 
                 # Add the updated DataFrames to the result dictionary
                 dataframe_result_dict.update(dataframe_list)
@@ -587,6 +590,8 @@ class Evaluator:
                                 total_value = df["Total"].sum()
                                 if prop_type == "FanPower" or prop_type == "CoilPower":
                                     total_value = total_value/1000
+                                    if electricity_prices != None and prop_type == "FanPower":
+                                        total_value = total_value*1000
                             else:
                                 total_value = 0  # Default to 0 if the 'Total' column is not present
                         else:
@@ -598,36 +603,224 @@ class Evaluator:
 
                 print(comparison_dict)
 
-                # Convert to a DataFrame for easy plotting
-                comparison_df = pd.DataFrame(comparison_dict, index=models_ids)
+                # Use Seaborn styling
+                sns.set(style="white")
 
-                # Create a figure with 5 subplots (one for each property)
-                fig, axes = plt.subplots(1, 5, figsize=(20, 6), sharey=False)
+                # Extract values from the dict
+                temperature_discomfort = comparison_dict["Temperature"]
+                co2_discomfort = comparison_dict["Co2"]
+                energy = comparison_dict["Energy"]
+                fan_power = comparison_dict["FanPower"]
+                heating_coil = comparison_dict["CoilPower"]
+                scenarios = models_ids  # x-axis labels
 
-                # Plot each property in a separate subplot
-                property_types = ["Temperature", "Co2", "Energy", "FanPower", "CoilPower"]
-                for i, prop_type in enumerate(property_types):
-                    comparison_df[prop_type].plot(kind="bar", ax=axes[i], color="skyblue")
-                    axes[i].set_title(f"{prop_type} Comparison")
-                    axes[i].set_xlabel("Model ID")
-                    if prop_type == "Temperature":
-                        axes[i].set_ylabel("Temperature Discomfort [Kh]")
-                    elif prop_type == "CO2":
-                        axes[i].set_ylabel("CO2 Discomfort [PPM]")
-                    elif prop_type == "Energy":
-                        axes[i].set_ylabel("Energy Consumption [kWh]")
-                    else:
-                        axes[i].set_ylabel("Power Consumption [kWh]")
+                energy = [z / 1000 for z in energy]
+                fan_power = [z / 1000 for z in fan_power]
+                heating_coil = [z / 1000 for z in heating_coil]
 
-                    axes[i].set_xticklabels(models_ids, rotation=90)
+                print(fan_power)
 
-                # Adjust layout to avoid overlap
+                x = np.arange(len(scenarios))
+                # Adjust bar width based on number of scenarios
+                if len(scenarios) == 1:
+                    width = 0.15  # Much thinner bars for single scenario
+                else:
+                    width = 0.15  # Default width
+
+                fig, ax1 = plt.subplots(figsize=(14, 7))
+                ax2 = ax1.twinx()
+                ax3 = ax1.twinx()
+                ax3.spines["right"].set_position(("outward", 70))
+
+                # Bar colors and edges
+                pastel_red = "#FD2145"
+                pastel_blue = "#2884F6"
+                light_grey = "#D3D3D3"
+                medium_grey = "#A9A9A9"
+                dark_grey = "#696969"
+                dark_blue_edge = "#FD2145"
+                dark_green_edge = "#CB0112"
+                dark_orange_edge = "#660000"
+
+                # Plot bars
+                bars_energy = ax2.bar(x - width, energy, width, label="Space Heater Consumption", color=light_grey, edgecolor=dark_blue_edge, linestyle="--", linewidth=1.5)
+                bars_fan = ax2.bar(x, fan_power, width, label="Fan Power Consumption", color=medium_grey, edgecolor=dark_green_edge, linestyle="--", linewidth=1.5)
+                bars_coil = ax2.bar(x + width, heating_coil, width, label="Heating Coil Consumption", color=dark_grey, edgecolor=dark_orange_edge, linestyle="--", linewidth=1.5)
+
+                bars_temp = ax1.bar(x - 2*width, temperature_discomfort, width, label="Temperature Discomfort", color=pastel_blue, edgecolor="darkblue")
+                bars_co2 = ax3.bar(x + 2*width, co2_discomfort, width, label="CO2 Discomfort", color=pastel_red, edgecolor="darkred")
+
+                # Axes labels
+                ax1.set_xlabel("Scenario", fontsize=16)
+                ax1.set_ylabel("Temperature Discomfort [Kh]", color=pastel_blue, fontsize=14)
+                ax2.set_ylabel("Energy Consumption [MWh]", color=medium_grey, fontsize=14)
+                ax3.set_ylabel("CO₂ Discomfort [ppmh]", color=pastel_red, fontsize=14)
+                ax3.set_ylim(bottom=0)  # <- This fixes the issue
+                #ax1.set_title("Comparison of Discomfort and Energy Consumption")
+                ax1.set_title("Discomfort and Energy Consumption of Recommissioned Setpoint Strategies", fontsize=18)
+
+                ax1.set_xticks(x)
+                ax1.set_xticklabels(scenarios, fontsize = 16)
+                ax1.tick_params(axis="x", pad=15)
+
+                # Match tick label colors
+                ax1.yaxis.set_tick_params(labelcolor=pastel_blue)
+                ax2.yaxis.set_tick_params(labelcolor=medium_grey)
+                ax3.yaxis.set_tick_params(labelcolor=pastel_red)
+
+                # Combine legends
+                handles1, labels1 = ax1.get_legend_handles_labels()
+                handles2, labels2 = ax2.get_legend_handles_labels()
+                handles3, labels3 = ax3.get_legend_handles_labels()
+
+                handles = handles1 + handles2 + handles3
+                labels = labels1 + labels2 + labels3
+
+                ax1.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=4, frameon=False, fontsize=14)
+
+                ax1.grid(True, which='both', axis='y', linestyle='--', linewidth=0.7, color='gray')
+
                 plt.tight_layout()
-                plt.show()
+                
+                plt.savefig("Scenario_energy_comparison_3.png", dpi=500, bbox_inches='tight')
+                output_path = os.path.join(os.path.dirname(__file__), "evaluator_plot.png")
+                plt.savefig(output_path, format="png", bbox_inches="tight")
+                #plt.show()
 
-                subplot_across_properties_occupancy(df_simulation_readings_list, models, measuring_devices)  
+                return comparison_dict
+        
 
-                plot_mode = "time"
+
+                # # Add a 'Total' column by summing the costs for each scenario
+                # total_cost = np.array(comparison_dict["Energy"]) + np.array(
+                #     comparison_dict["FanPower"]) + np.array(comparison_dict["CoilPower"])
+                # comparison_dict["Total Cost [DKK]"] = total_cost
+
+                # # Define categories and metrics
+                # scenarios = models_ids
+                # space_heater = comparison_dict['Energy']
+                # fan_power = comparison_dict['FanPower']
+                # heating_coil = comparison_dict['CoilPower']
+                # total = comparison_dict['Total Cost [DKK]']
+
+                # # Plotting
+                # x = np.arange(len(scenarios))
+                # width = 0.15  # width of bars
+
+                # fig, ax1 = plt.subplots(figsize=(14, 7))
+
+                # # Pastel colors for bars
+                # pastel_red = "#2884F6"
+                # pastel_blue = "#2884F6"
+                # pastel_green = "#99FF99"
+                # pastel_orange = "#FFCC99"
+                # light_grey_fill = "#E0E0E0"  # Lighter grey for fill
+
+                # # Distinct shades of grey for energy consumption
+                # light_grey = "#D3D3D3"  # Light grey for space heater
+                # medium_grey = "#A9A9A9"  # Medium grey for fan power
+                # dark_grey = "#696969"  # Dark grey for heating coil
+                # dark_purple = "#7F4B8B"  # Dark purple for total cost
+
+                # # Distinct edge colors for each energy consumption category
+                # dark_blue_edge = "#FD2145"  # Dark blue for space heater
+                # dark_green_edge = "#CB0112"  # Dark green for fan power
+                # dark_orange_edge = "#660000"  # Dark orange for heating coil
+                # dark_purple_edge = "#7F4B8B"  # Dark purple for total cost
+
+                # # Plot bars for energy consumption (space heater, fan, heating coil) with stippled edges
+                # bars_space_heater = ax1.bar(x - width, space_heater, width, label='Space Heater Cost (DH)', color=light_grey,
+                #                             edgecolor=dark_blue_edge, linestyle='-', linewidth=0.5)
+                # bars_fan_power = ax1.bar(x, fan_power, width, label='Fan Cost (Electricity)', color=medium_grey,
+                #                         edgecolor=dark_green_edge, linestyle='-', linewidth=0.5)
+                # bars_heating_coil = ax1.bar(x + width, heating_coil, width, label='Heating Coil Cost (DH)', color=dark_grey,
+                #                             edgecolor=dark_orange_edge, linestyle='-', linewidth=0.5)
+
+                # # Plot the total cost bar
+                # bars_total = ax1.bar(x + 2 * width, total, width, label='Total Energy Cost', color=pastel_orange, edgecolor="k",
+                #                     linestyle='-', linewidth=0.5)
+
+                # # Set the labels for the axes with increased font size
+                # ax1.set_ylabel('Energy Price [DKK]', color=dark_grey, fontsize=14)
+
+                # # Set the title with increased font size 
+                # ax1.set_title('Comparison Energy Cost for Baseline & Scenarios #1, #2, #3 & #4', fontsize=16)
+
+                # ax1.set_xticks(x)
+                # ax1.set_xticklabels(scenarios, fontsize=12)
+
+                # # Set y-axis colors corresponding to the bars
+                # ax1.yaxis.set_tick_params(labelcolor=dark_grey, labelsize=12)
+
+                # # Adjust x-axis tick label position to make them four columns below the x-axis label
+                # ax1.tick_params(axis='x', pad=15)
+
+                # # Combine the legends into one box with larger font
+                # handles, labels = ax1.get_legend_handles_labels()
+                # ax1.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=5, frameon=False, fontsize=12)
+
+                # # Set y-axis limits
+                # ax1.set_ylim(0,
+                #             max(max(space_heater), max(fan_power), max(heating_coil), max(total) + 1000) + 1)  # For energy consumption
+
+                # # Enable grid for the temperature axis only
+                # ax1.grid(True, which='both', axis='y', linestyle='--', linewidth=0.7, color='gray')
+
+                # # Find the baseline total cost
+                # baseline_cost = total[0]
+
+                # # Add a horizontal dashed red line at the baseline total cost
+                # ax1.axhline(y=baseline_cost, color='red', linestyle='--', linewidth=1.5, label='Baseline Total Cost')
+
+                # # Shade the area for scenarios below or above the baseline
+                # for i in range(1, len(scenarios)):  # Skip the baseline scenario
+                #     if total[i] < baseline_cost:
+                #         # For cheaper scenarios, use a light green color
+                #         ax1.fill_between([x[i] + 1.5 * width, x[i] + 2.5 * width], total[i], baseline_cost, color=pastel_green,
+                #                         alpha=0.3, hatch="\\\\\\", edgecolor="k")
+
+                #         # Calculate percentage difference from baseline
+                #         percentage_diff = ((baseline_cost - total[i]) / baseline_cost) * 100
+                #         # Add green percentage text above the total cost bars for cheaper scenarios
+                #         ax1.text(x[i] + 2 * (width * 1.05), total[0] + 125, f"-{percentage_diff:.1f}%", color='green', fontsize=12,
+                #                 ha='center')
+
+                #     elif total[i] > baseline_cost:
+                #         # For more expensive scenarios, use a light orange color
+                #         ax1.fill_between([x[i] + 1.5 * width, x[i] + 2.5 * width], baseline_cost, total[i], color=pastel_orange,
+                #                         alpha=0.3, hatch="////", edgecolor="k")
+
+                #         # Calculate percentage difference from baseline
+                #         percentage_diff = ((total[i] - baseline_cost) / baseline_cost) * 100
+                #         # Add red percentage text above the total cost bars for more expensive scenarios
+                #         ax1.text(x[i] + 2 * (width * 1.05), total[i] + 125, f"+{percentage_diff:.1f}%", color='red', fontsize=12,
+                #                 ha='center')
+
+                # # Update legend entry for the baseline line
+                # handles, labels = ax1.get_legend_handles_labels()
+                # handles.append(plt.Line2D([0], [0], color='red', linestyle='--', linewidth=1.5, label='Baseline Total Cost'))
+                # ax1.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=5, frameon=False, fontsize=12)
+
+                # # Adjust layout to avoid overlap with legend
+                # plt.tight_layout()
+
+                # # Save the figure
+                # plt.savefig("metrics_comparison_cost.png", dpi=500, bbox_inches='tight')
+
+                # # Show the plot
+                # plt.show()
+
+                # plt.clf()
+
+                
+
+                # subplot_across_properties_occupancy(df_simulation_readings_list, models, measuring_devices)  
+
+                # subplot_spaces_03_04_06_11(df_simulation_readings_list, models, measuring_devices)  
+
+                
+
+                # plot_mode = "time"
             
             elif plot_mode == "time":
                 # Plot the data over time for each property

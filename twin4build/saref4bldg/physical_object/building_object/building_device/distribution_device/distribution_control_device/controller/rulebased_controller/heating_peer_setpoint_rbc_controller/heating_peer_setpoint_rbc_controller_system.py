@@ -47,7 +47,7 @@ class HeatingSetpointPeerController(RulebasedController):
         self.passiveValue = None
         self.offValue = 21
         self.stepCounter = 0
-        self.passiveStartTime = 5
+        self.passiveStartTime = 6
         self.passiveEndTime = 19
         self.output = {"inputSignal": tps.Scalar()}
         self.isReverse = False
@@ -76,22 +76,31 @@ class HeatingSetpointPeerController(RulebasedController):
 
     def do_step(self, secondTime=None, dateTime=None, stepSize=None):
         peerBinaryValue = self.input["peerBinaryValue"].get()
-
         if dateTime is not None:
             current_hour = dateTime.hour + dateTime.minute / 60
+            # print("current_hour: ", current_hour)
+            # print("on ", self.onValue)
+            # print("off", self.offValue)
+            # print("passive", self.passiveValue)
+            #print(self._config)
             if self.passiveStartTime <= current_hour < self.passiveEndTime:
                 if peerBinaryValue > 0:
 
                     self.output["inputSignal"].set(self.onValue)
+                    # print("input:", self.output["inputSignal"])
                 else:
 
                     try:
                         if self.passiveValue is None:
                             self.passiveValue = self.offValue
                         self.output["inputSignal"].set(self.passiveValue)
+                        # print("input:", self.output["inputSignal"])
                     except Exception:
                         self.output["inputSignal"].set(self.offValue)
+                        # print("input:", self.output["inputSignal"])
                 return
+            
+            
 
         if peerBinaryValue > 0:
             self.stepCounter = 1
@@ -103,3 +112,5 @@ class HeatingSetpointPeerController(RulebasedController):
             self.output["inputSignal"].set(self.onValue)
         else:
             self.output["inputSignal"].set(self.offValue)
+
+        # print("input:", self.output["inputSignal"])

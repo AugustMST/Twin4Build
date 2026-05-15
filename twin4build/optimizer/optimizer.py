@@ -150,13 +150,17 @@ class OptimizationProblem(Problem):
     def evaluate_individual(self, design):
         try:
             discretized_design = self.map_to_discrete(design)
+            print(discretized_design)
             gene_index = 0
 
             # Apply controller setpoints
             for ctrl_idx, controller_name in enumerate(self.controllers):
+                print(controller_name)
                 controller = self.model.component_dict[controller_name]
                 for setpoint_name in self.setpoints_per_controller[ctrl_idx]:
+                    print(setpoint_name)
                     value = discretized_design[gene_index]
+                    print(value)
                     rsetattr(controller, setpoint_name, value)
                     gene_index += 1
 

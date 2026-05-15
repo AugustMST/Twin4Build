@@ -250,6 +250,32 @@ def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metri
 
     return kpi
 
+def average_temperature_function(df_simulation_readings, measuring_device):
+    """
+    Calculates the time-weighted average temperature over the entire period.
+
+    Parameters:
+    - df_simulation_readings: DataFrame with datetime index and temperature readings.
+    - measuring_device: string identifier of the column in df_simulation_readings representing the temperature sensor.
+
+    Returns:
+    - avg_temp: time-weighted average temperature (float).
+    """
+    evaluation_metric = "T"
+    # Create a DataFrame with time and temperature
+    temp_df = pd.DataFrame()
+    temp_df["time"] = df_simulation_readings.index
+    temp_df["temp_readings"] = df_simulation_readings[measuring_device].values
+    temp_df.set_index("time", inplace=True)
+    temp_df.resample(f'1{evaluation_metric}').mean()
+
+    # Calculate average temperature
+    temp_df = temp_df.tail(n=1).set_index(pd.Index(["Total"]))
+    avg_temp = temp_df[["temp_readings"]]
+
+    return avg_temp
+
+
 # def Temp_kpi_function(df_simulation_readings, measuring_device, evaluation_metric, model, absolute=True):
 #     cooling_setpoint = 25
 #     print(f"Processing measuring_device: {measuring_device}")
@@ -681,7 +707,7 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                 ax.text(0.02, 0.95, subplot_labels[i], transform=ax.transAxes, fontsize=10, fontweight='bold', va='top')
 
                 # Set subplot title
-                ax.set_title(new_column_names[i], fontsize=9)
+                ax.set_title(new_column_names[i], fontsize=11)
 
                 # Plot each dataframe's data for this column
                 for idx, df in enumerate(dataframes):
@@ -757,7 +783,7 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                         label='Occupied'
                     )
 
-                    ax.set_ylabel('Degree Celsius', fontsize=7)
+                    ax.set_ylabel('Temperature [C]', fontsize=9)
                     ax.tick_params(axis='x', rotation=45)
 
                 # Add fixed value lines and bands
@@ -781,25 +807,210 @@ def subplot_across_properties_occupancy(simulation_results_df: list, list_models
                 fig.delaxes(axes[j])
 
             # Define handles for custom legend items
-            red_stippled_line = mlines.Line2D([], [], color='red', linestyle='--', label='Minimum Temperature')
+            red_stippled_line = mlines.Line2D([], [], color='red', linestyle='--', label='Minimum Comfort Temperature')
             gray_shading = mpatches.Patch(color='gray', alpha=0.3, label='PIR Sensor Active')
-            red_shading = mpatches.Patch(color='red', alpha=0.2, label='Heating Deadband')
+            red_shading = mpatches.Patch(color='red', alpha=0.2, label='Comfort Deadband')
 
             # Add custom legend items
             fig.legend(
                 handles=lines + [red_stippled_line, gray_shading, red_shading],
-                labels=labels + ['Minimum Temperature', 'PIR Sensor Active', 'Heating Deadband'],
+                labels=labels + ['Minimum Comfort Temperature', 'PIR Sensor Active', 'Comfort Deadband'],
                 loc='lower center',
-                fontsize=8,
+                fontsize=10,
                 ncol=4
             )
+
+            fig.suptitle('Temperature Profiles Across Building Spaces', fontsize=14, y=0.98)
+
+            # Adjust layout to ensure everything fits properly on the A4 page and leave space for the title
+
+            # Add a box around the entire figure
+            fig.patch.set_linewidth(2)
+            fig.patch.set_edgecolor('black')
 
             # Adjust layout to ensure everything fits properly on the A4 page
             plt.tight_layout(pad=2.0)
 
             # Save the plot to a file (A4 size)
-            plt.savefig("temperature_subplot_A4.png", dpi=300, bbox_inches='tight')
+            plt.savefig("temperature_subplot_A4.png", dpi=600, bbox_inches='tight')
             plt.show()
+
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
+import numpy as np
+import pandas as pd
+
+def subplot_spaces_03_04_06_11(simulation_results_df: list, list_models: list, measuring_devices: list):
+    for model in list_models:
+        Temperature_list = []
+
+        # Classify measuring devices for temperature
+        for measuring_device in measuring_devices:
+            property_ = (model.component_dict[measuring_device].observes)[0]
+            if isinstance(property_, Temperature) and isinstance(property_.isPropertyOf, BuildingSpace):
+                Temperature_list.append(measuring_device)
+
+        dataframes = simulation_results_df
+
+        # Filter for Space 03, Space 04, Space 06, Space 11 (based on new_column_names mapping)
+        target_sensors = ['011A_temperature_sensor', '012A_temperature_sensor', '015A_temperature_sensor', '033A_temperature_sensor']
+        filtered_columns = [col for col in target_sensors if col in set.intersection(*(set(df.columns) for df in dataframes))]
+
+        # Define new column names for the selected spaces
+        new_column_names = {
+            '011A_temperature_sensor': 'Space_03 Temperature Sensor',
+            '012A_temperature_sensor': 'Space_04 Temperature Sensor',
+            '015A_temperature_sensor': 'Space_06 Temperature Sensor',
+            '033A_temperature_sensor': 'Space_11 Temperature Sensor'
+        }
+
+        # Fixed values for the selected sensors
+        fixed_values = {
+            '011A_temperature_sensor': 22,
+            '012A_temperature_sensor': 22,
+            '015A_temperature_sensor': 22,
+            '033A_temperature_sensor': 22.5
+        }
+
+        # Set A4 size dimensions (in inches)
+        fig_width = 8.27
+        fig_height = 11.7
+
+        # Create subplots with 4 rows and 1 column
+        fig, axes = plt.subplots(4, 1, figsize=(fig_width, fig_height), sharex=True)
+        axes = axes.flatten()  # Flatten for easier iteration
+
+        lines = []
+        labels = []
+        subplot_labels = [f'({chr(97 + i)})' for i in range(len(filtered_columns))]
+
+        for i, column in enumerate(filtered_columns):
+            ax = axes[i]
+
+            # Add subplot label in the top-left corner
+            ax.text(0.02, 0.95, subplot_labels[i], transform=ax.transAxes, fontsize=10, fontweight='bold', va='top')
+
+            # Set subplot title
+            ax.set_title(new_column_names[column], fontsize=9)
+
+            # Plot each dataframe's data for this column
+            for idx, df in enumerate(dataframes):
+                model_label = list_models[idx].id
+
+                # Plot data with a label only the first time
+                if i == 0:
+                    line, = ax.plot(df.index, df[column], label=model_label)
+                    lines.append(line)
+                    labels.append(model_label)
+                else:
+                    ax.plot(df.index, df[column])
+
+                # Retrieve occupancy values
+                space = model.component_dict[column].isContainedIn
+                modeled_space = model.instance_map_reversed[space]
+                space_id = model.component_dict[modeled_space.id]
+                list_of_measuring_devices = space.contains
+
+                # Check for sensor-based occupancy
+                occupancy_values = None
+                for component in list_of_measuring_devices:
+                    if isinstance(component, Sensor) and isinstance(component.observes[0], Peer):
+                        if component.id in df.columns:
+                            occupancy_values = df[component.id]
+                            print(component.id)
+                            break
+
+                # Fall back to schedule-based occupancy if no sensor found
+                if occupancy_values is None:
+                    schedule = space.hasProfile
+                    modeled_schedule = model.instance_map_reversed[schedule]
+                    occupancy_schedule_values = modeled_schedule.savedOutput["scheduleValue"]
+                    difference = len(occupancy_schedule_values) - len(df)
+                    if difference > 0:
+                        occupancy_schedule_values = occupancy_schedule_values[difference:]
+                    occupancy_values = pd.Series(occupancy_schedule_values, index=df.index)
+
+                # Determine occupancy threshold
+                try:
+                    occupancy_threshold = space_id.occupancyThreshold
+                except AttributeError:
+                    occupancy_threshold = 0.5
+                    print(f"AttributeError: '{space_id.id}' object has no attribute 'occupancyThreshold', assigning default value.")
+                except Exception as e:
+                    occupancy_threshold = 0.5
+                    print(f"An unexpected error occurred: {e}. Assigning default value.")
+
+                # Determine occupancy status
+                is_occupied = occupancy_values > occupancy_threshold
+
+                # Count True and False values
+                num_true = np.sum(is_occupied)
+                num_false = len(is_occupied) - num_true
+                print(column, f"Number of True values (occupied): {num_true}")
+                print(column, f"Number of False values (not occupied): {num_false}")
+
+                # Determine y-axis limits based on data
+                ymin, ymax = df[column].min(), df[column].max()
+                ax.set_ylim(ymin, ymax)
+
+                # Add shading for occupied periods
+                ax.fill_between(
+                    df.index,
+                    0,
+                    300,
+                    where=is_occupied,
+                    color='gray',
+                    alpha=0.3,
+                    transform=ax.get_xaxis_transform(),
+                    label='Occupied'
+                )
+
+                ax.set_ylabel('Degree Celsius', fontsize=7)
+                ax.tick_params(axis='x', rotation=45)
+
+                # Add fixed value lines and bands
+                if column in fixed_values:
+                    fixed_value = fixed_values[column]
+                    ax.axhline(y=fixed_value, color='red', linestyle='--', label=f'Fixed value: {fixed_value}')
+                    ax.fill_between(
+                        df.index,
+                        fixed_value,
+                        25,
+                        color='red',
+                        alpha=0.2
+                    )
+
+                # Ensure temperature-related y-axis is between 19 and 25
+                ax.set_ylim(19, 25)
+
+        # Define handles for custom legend items
+        red_stippled_line = mlines.Line2D([], [], color='red', linestyle='--', label='Minimum Temperature')
+        gray_shading = mpatches.Patch(color='gray', alpha=0.3, label='PIR Sensor Active')
+        red_shading = mpatches.Patch(color='red', alpha=0.2, label='Heating Deadband')
+
+        # Add custom legend
+        fig.legend(
+            handles=lines + [red_stippled_line, gray_shading, red_shading],
+            labels=labels + ['Minimum Temperature', 'PIR Sensor Active', 'Heating Deadband'],
+            loc='lower center',
+            fontsize=8,
+            ncol=4
+        )
+
+        # Add combined title
+        fig.suptitle('Temperature Profiles for Spaces 03, 04, 06, and 11', fontsize=12, y=1.02)
+
+        # Adjust layout to fit A4 page and leave space for title and legend
+        plt.tight_layout(rect=[0, 0.05, 1, 0.95])
+
+        # Add box around the entire figure
+        fig.patch.set_linewidth(2)
+        fig.patch.set_edgecolor('black')
+
+        # Save the plot to a file
+        plt.savefig("temperature_subplot_spaces_03_04_06_11.png", dpi=300, bbox_inches='tight')
+        plt.show()
 
 
 def plot_comparison(models, dataframe_result_dict, plot_mode="comparison"):
